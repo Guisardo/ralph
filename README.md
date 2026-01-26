@@ -121,7 +121,8 @@ Ralph will:
 | `skills/ralph/` | Skill for converting PRDs to JSON |
 | `flowchart/` | Interactive visualization of how Ralph works |
 | `mcp_servers.json.example` | Example MCP configuration for Jira integration |
-| `.ralph/jira.json` | Per-project Jira settings (created per-project, not tracked) |
+| `.ralph/jira.json.example` | Example per-project Jira configuration template |
+| `.ralph/jira.json` | Per-project Jira settings (copy from example, not tracked) |
 
 ## Flowchart
 
@@ -271,7 +272,15 @@ Your Atlassian account needs these permissions in the target Jira project:
 
 ### Step 4: Configure Per-Project Jira Settings
 
-Create `.ralph/jira.json` in your project (see US-002 for details):
+Copy the example configuration and customize for your project:
+
+```bash
+# From your project root (where prd.json lives)
+mkdir -p .ralph
+cp /path/to/ralph/.ralph/jira.json.example .ralph/jira.json
+```
+
+Edit `.ralph/jira.json` with your project-specific values:
 
 ```json
 {
@@ -288,6 +297,10 @@ Create `.ralph/jira.json` in your project (see US-002 for details):
   }
 }
 ```
+
+See `.ralph/jira.json.example` for all available configuration options and detailed field documentation.
+
+**Important**: The `.ralph/jira.json` file is gitignored by default since it contains project-specific settings. Each project needs its own configuration.
 
 ### Step 5: Sync PRD to Jira
 
