@@ -171,14 +171,47 @@ After creation, store the epic key (e.g., "PROJ-123") for:
 
 ## Step 5: Create Story Tickets
 
-For each user story in `prd.userStories` (in priority order):
+Create a Jira ticket for **each user story** in the PRD. Each story becomes one Jira issue linked to the parent epic.
 
-### Story Details
+### Sort Stories by Priority
 
-- **Project**: From `jira.json` projectKey
-- **Issue Type**: From `jira.json` storyIssueType
-- **Summary**: `[{story.id}]: {story.title}`
-- **Description**: Format as Jira markup:
+Before creating tickets, sort `prd.userStories` by the `priority` field (ascending order - lower number = higher priority). This ensures:
+- Tickets are created in the same order they appear in the PRD
+- Jira issue numbers roughly correspond to implementation order
+- The backlog view reflects the intended work sequence
+
+```javascript
+// Sort stories by priority (1 = highest priority, created first)
+const sortedStories = [...prd.userStories].sort((a, b) => a.priority - b.priority);
+```
+
+### Iterate and Create Each Ticket
+
+For each story in the sorted list, create a Jira ticket:
+
+```
+FOR each story IN sortedStories:
+  1. Build ticket summary: "[{story.id}]: {story.title}"
+  2. Build ticket description (see format below)
+  3. Create issue via MCP tool
+  4. Store returned jiraKey with story.id for later prd.json update
+  5. Log success or handle error
+```
+
+### Ticket Summary Format
+
+```
+[{story.id}]: {story.title}
+```
+
+**Examples:**
+- `[US-001]: Configure Atlassian MCP server connection`
+- `[US-002]: Create Jira configuration file structure`
+- `[US-005]: Map user stories to Jira tickets in sync-jira`
+
+### Ticket Description Format (Jira Wiki Markup)
+
+Build the description using Jira wiki markup syntax. The `* [ ]` format creates interactive checkboxes in Jira:
 
 ```
 h2. User Story
@@ -190,32 +223,84 @@ h2. Acceptance Criteria
 {For each criterion in story.acceptanceCriteria:}
 * [ ] {criterion}
 
-h2. Priority
+h2. Metadata
 
-{story.priority}
+||Field||Value||
+|Priority|{story.priority}|
+|Story ID|{story.id}|
+|Implementation Status|{story.passes ? "Complete" : "Pending"}|
 
-h2. Implementation Status
+{If story.notes is not empty:}
+h2. Notes
 
-Passes: {story.passes}
-Notes: {story.notes or "None"}
+{story.notes}
 
 ----
 _Created by Ralph /sync-jira skill_
 ```
 
+**Acceptance Criteria as Checklist:**
+
+The `* [ ]` markup creates checkboxes in Jira. Example for a story with 3 criteria:
+
+```
+h2. Acceptance Criteria
+
+* [ ] Document MCP server setup in README.md with step-by-step instructions
+* [ ] Add Atlassian MCP server URL to Claude Code settings template
+* [ ] Document required Jira permissions (create issues, transition, comment)
+```
+
+This renders as an interactive checklist in Jira that team members can check off during review.
+
+### Ticket Fields
+
+- **Project**: From `jira.json` projectKey
+- **Issue Type**: From `jira.json` storyIssueType
+- **Summary**: `[{story.id}]: {story.title}`
+- **Description**: Formatted as shown above
 - **Labels**: From `jira.json` defaultLabels plus "ralph-story"
 - **Epic Link**: Link to the epic created in Step 4
 - **Components**: From `jira.json` components (if configured)
 
-### Link to Epic
+### Link Each Ticket to Epic
 
-Use the appropriate method based on Jira version:
-1. Try `epicLinkField` from config (e.g., "Epic Link" custom field)
-2. Fall back to "Parent" field for newer Jira versions
+Each story ticket must be linked to the parent epic. Use the appropriate method based on Jira version:
+
+1. **Try `epicLinkField`** from config (e.g., "Epic Link" custom field)
+   - Common in Jira Server and older Jira Cloud
+   - Field name varies: "Epic Link", "customfield_10014", etc.
+
+2. **Fall back to "Parent" field** for newer Jira versions
+   - Jira Cloud next-gen projects use parent-child hierarchy
+   - Set `parent: { key: epicKey }` in the create request
+
+**MCP Create Issue Example:**
+```json
+{
+  "project": "PROJ",
+  "issueType": "Story",
+  "summary": "[US-001]: Configure Atlassian MCP server connection",
+  "description": "h2. User Story\n\nAs a developer...\n\nh2. Acceptance Criteria\n\n* [ ] Document MCP server setup...",
+  "labels": ["ralph-story", "automated"],
+  "parent": "PROJ-100"
+}
+```
 
 ### Track Created Tickets
 
-Collect all created ticket keys for the summary and prd.json update.
+Maintain a mapping of story IDs to created Jira keys:
+
+```javascript
+const ticketMap = {
+  "US-001": "PROJ-101",
+  "US-002": "PROJ-102",
+  "US-003": "PROJ-103",
+  // ... etc
+};
+```
+
+This map is used in Step 6 to update prd.json.
 
 ---
 
