@@ -80,6 +80,29 @@ Only update AGENTS.md if you have **genuinely reusable knowledge** that would he
 - Keep changes focused and minimal
 - Follow existing code patterns
 
+## Testing Requirements (Critical)
+
+**Every story MUST include tests that verify its acceptance criteria.**
+
+### For Feature Stories:
+1. **Write unit tests** that verify the specific functionality in acceptance criteria
+2. Tests go in the appropriate test directory following project conventions
+3. Use the project's existing test framework
+4. Run `npm test` (or equivalent) before committing
+
+### For Integration Tests Story (Final Story):
+1. Write integration/functional tests covering complete user flows
+2. Test end-to-end scenarios from the original PRD
+3. Verify all previous unit tests still pass
+4. Tests should cover data persistence, component interaction, and error handling
+
+### Test Verification Order:
+1. Write the implementation code
+2. Write unit tests for the acceptance criteria
+3. Run typecheck - must pass
+4. Run all tests - must pass
+5. Only then commit the changes
+
 ## Browser Testing (Required for Frontend Stories)
 
 For any story that changes UI, you MUST verify it works in the browser:
