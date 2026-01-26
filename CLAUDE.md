@@ -200,13 +200,120 @@ Example workflow:
 
 #### On Story Completion (After Successful Commit)
 
-- Transition ticket to "Done" and add comment with learnings
-- Details covered in US-008
+When you successfully commit a story and it has a valid jiraKey:
+
+1. **Read Jira configuration**: Load `.ralph/jira.json` to get the `statusMapping.done` transition name
+
+2. **Transition the ticket to Done**:
+   ```
+   Use MCP tool: jira-transition-issue (or atlassian_jira_transition_issue)
+   Parameters:
+     - issueKey: story.jiraKey (e.g., "PROJ-123")
+     - transition: statusMapping.done (e.g., "Done")
+   ```
+
+3. **Add completion comment with learnings**: Create a detailed comment with implementation notes formatted in Jira wiki markup:
+   ```
+   Use MCP tool: jira-add-comment (or atlassian_jira_add_comment)
+   Parameters:
+     - issueKey: story.jiraKey
+     - body: <completion comment in Jira wiki markup - see format below>
+   ```
+
+4. **Completion Comment Format** (Jira wiki markup):
+   ```
+   h2. ✅ Completed by Ralph Agent
+
+   h3. Files Changed
+   * path/to/file1.ts
+   * path/to/file2.ts
+   * path/to/file3.md
+
+   h3. What Was Implemented
+   <Brief summary of what was done>
+
+   h3. Patterns Discovered
+   * <Pattern 1 - e.g., "This codebase uses X for Y">
+   * <Pattern 2 - e.g., "Don't forget to update Z when changing W">
+
+   h3. Gotchas Encountered
+   * <Gotcha 1 - things to watch out for>
+   * <Gotcha 2 - edge cases discovered>
+
+   {code:title=Commit Reference}
+   feat: [STORY-ID] - Story Title
+   {code}
+   ```
+
+5. **Handle failures gracefully**:
+   - If transition fails: Log brief note in progress.txt, continue
+   - If comment fails: Log brief note, continue
+   - If MCP tools unavailable: Skip silently, continue
+   - **Never abort the workflow due to Jira errors**
+
+Example workflow:
+```
+1. Successfully commit: "feat: [US-008] - Update ticket status on completion"
+2. Read prd.json → find story US-008 with jiraKey: "PROJ-789"
+3. Read .ralph/jira.json → statusMapping.done = "Done"
+4. Call jira-transition-issue(issueKey="PROJ-789", transition="Done")
+5. Build completion comment from progress.txt learnings
+6. Call jira-add-comment(issueKey="PROJ-789", body="<formatted comment>")
+7. Continue with prd.json update...
+```
 
 #### On Story Failure
 
-- Leave ticket in current state with failure comment
-- Details covered in US-008
+When a story fails (tests don't pass, implementation blocked, etc.) and it has a valid jiraKey:
+
+1. **Do NOT transition the ticket**: Leave the ticket in its current "In Progress" state
+
+2. **Add failure comment**: Create a comment explaining the failure in Jira wiki markup:
+   ```
+   Use MCP tool: jira-add-comment (or atlassian_jira_add_comment)
+   Parameters:
+     - issueKey: story.jiraKey
+     - body: <failure comment in Jira wiki markup - see format below>
+   ```
+
+3. **Failure Comment Format** (Jira wiki markup):
+   ```
+   h2. ⚠️ Implementation Blocked - Ralph Agent
+
+   h3. Failure Reason
+   <Brief description of why the story could not be completed>
+
+   h3. Error Details
+   {code}
+   <Error message or test failure output>
+   {code}
+
+   h3. Files Attempted
+   * path/to/file1.ts
+   * path/to/file2.ts
+
+   h3. Possible Solutions
+   * <Suggestion 1>
+   * <Suggestion 2>
+
+   h3. Manual Intervention Required
+   <What the developer needs to do to unblock>
+   ```
+
+4. **Handle failures gracefully**:
+   - If comment fails: Log brief note in progress.txt, continue
+   - If MCP tools unavailable: Skip silently, continue
+   - **Never abort the workflow due to Jira errors**
+
+Example workflow:
+```
+1. Tests fail after implementation attempt
+2. Read prd.json → find story US-009 with jiraKey: "PROJ-790"
+3. Do NOT call jira-transition-issue (keep ticket In Progress)
+4. Build failure comment with error details
+5. Call jira-add-comment(issueKey="PROJ-790", body="<failure comment>")
+6. End iteration (do not commit broken code)
+```
 
 All Jira operations are non-blocking - failures do not stop the workflow.
 
