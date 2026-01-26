@@ -154,27 +154,13 @@ Before finalizing the PRD, analyze if diagrams would add value. Diagrams are pow
 - Standard CRUD with obvious architecture
 - All components clearly described in text
 
-### Sequence Diagram Worthiness
-
-**Generate sequence diagram IF:**
-- 3+ services/participants communicate in a flow, OR
-- Async operations involved (webhooks, message queues, background jobs, WebSocket push), OR
-- Complex request-response chains where timing/order matters (auth flows, payment processing, multi-step API orchestration)
-
-**SKIP if:**
-- Simple single API call (request-response obvious)
-- No external services or async operations
-- Interaction already clear from architecture diagram
-- Only 2 participants (use text description instead)
-
 ### Complexity Limits
 
 To keep diagrams readable and useful:
 - **User flows:** Maximum 10 nodes. If requirements suggest more, either split into multiple diagrams or skip entirely (feature too complex to visualize effectively)
 - **Architecture:** Maximum 8 nodes. Focus on primary components, not every service detail
-- **Sequences:** Maximum 7 participants. Sequence diagrams with more participants become horizontal scroll nightmares
 
-If a feature exceeds these limits, either split into multiple focused diagrams or skip entirely. Exceeding limits signals the PRD may need to be split into smaller features.
+If a feature exceeds these limits, it's a signal that the PRD may need to be split into smaller features.
 
 ### Diagram Templates
 
@@ -222,101 +208,6 @@ flowchart LR
 - `-->` for primary data flow
 - `-.->` for optional/cache-miss/fallback paths
 
-#### Sequence Diagram Templates (sequenceDiagram)
-
-Sequence diagrams use different syntax than flowcharts. Use `sequenceDiagram` directive, `actor` for humans, and `participant` for services.
-
-**Arrow conventions:**
-- `->>` for synchronous request (waits for response)
-- `-->>` for synchronous response (returning)
-- `--)` for async message (fire and forget, webhook, queue)
-
-##### Basic Sequence (Sync Request-Response)
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant UI as Frontend
-    participant API as Backend
-    participant DB as Database
-
-    User->>UI: Initiate action
-    UI->>API: POST /api/action
-    activate API
-    API->>DB: Query data
-    DB-->>API: Results
-    API-->>UI: 200 OK + data
-    deactivate API
-    UI->>User: Display result
-```
-
-**Key patterns:**
-- `actor` for human users, `participant X as Label` for services
-- `activate`/`deactivate` shows processing duration
-- Pair requests with responses for sync calls
-
-##### Async Operations (Queue, Webhooks)
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant UI as Frontend
-    participant API as Backend
-    participant Queue as Message Queue
-    participant Worker as Background Worker
-
-    User->>UI: Upload file
-    UI->>API: POST /upload
-    API->>Queue: Enqueue processing job
-    API-->>UI: 202 Accepted (job ID)
-    UI->>User: "Processing..."
-
-    Queue--)Worker: Process job
-    activate Worker
-    Worker->>Worker: Process file
-    deactivate Worker
-    Worker--)API: Webhook: job complete
-    API--)UI: WebSocket: file ready
-    UI->>User: "Complete!"
-```
-
-**Key patterns:**
-- `--)` for async messages (no response expected)
-- No response arrow for fire-and-forget async
-- WebSocket push shown as async from API to UI
-
-##### Auth Flow with Alt/Else (Conditional Paths)
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant UI as Frontend
-    participant API as Backend
-    participant Auth as Auth Service
-    participant DB as Database
-
-    User->>UI: Login with credentials
-    UI->>API: POST /auth/login
-    API->>Auth: Validate credentials
-    Auth->>DB: Lookup user
-    DB-->>Auth: User record
-
-    alt Valid credentials
-        Auth-->>API: Token generated
-        API-->>UI: 200 OK + token
-        UI->>User: Redirect to dashboard
-    else Invalid credentials
-        Auth-->>API: Auth failed
-        API-->>UI: 401 Unauthorized
-        UI->>User: Show error message
-    end
-```
-
-**Key patterns:**
-- `alt`/`else`/`end` for conditional flows
-- Show both success and failure paths
-- `end` keyword closes the alt block
-
 ### Character Escaping Rules
 
 To prevent Mermaid syntax errors:
@@ -336,34 +227,16 @@ To prevent Mermaid syntax errors:
 
 4. **Stick to classic syntax:** Use v10-compatible shapes for maximum GitHub compatibility. Avoid v11.3.0+ generalized shape syntax.
 
-#### Sequence Diagram Escaping Additions
-
-5. **Sequence reserved keywords:** Avoid these as participant names or message text:
-   - `end`, `loop`, `alt`, `else`, `opt`, `par`, `and`, `critical`, `option`, `break`, `rect`, `note`
-   - If needed, wrap in quotes: `participant "End User" as EndUser`
-
-6. **Special characters in aliases:**
-   ```mermaid
-   participant API as "API Server (v2)"
-   participant DB as "PostgreSQL [Primary]"
-   ```
-
-7. **Line breaks in notes:**
-   ```mermaid
-   Note over API,DB: Multi-line note<br/>with line break
-   ```
-
 ### Section Placement Instructions
 
 When diagrams pass worthiness criteria:
 
 1. Insert "## System Diagrams" section after Technical Considerations, before Success Metrics
-2. Include "### Diagram Judgment" subsection FIRST, explaining why each diagram type was included or skipped
-3. Include a purpose statement: "This section visualizes the {user journey / system architecture / service interactions} to clarify {what aspect}."
-4. Add a subsection title for each diagram type included
-5. Include the Mermaid code block with proper syntax
+2. Include a purpose statement at the start: "This section visualizes the {user journey / system architecture} to clarify {what aspect}."
+3. Add a subsection title for each diagram type included
+4. Include the Mermaid code block with proper syntax
 
-**Only include the System Diagrams section when at least one diagram is generated.** The section starts with diagram judgment notes explaining inclusion decisions, followed by the actual diagrams.
+**Only include the System Diagrams section when at least one diagram is generated.** Do not add an empty section.
 
 ### Worthiness Analysis Process
 
@@ -373,203 +246,16 @@ When generating a PRD:
 
 2. **After writing Technical Considerations:** Count distinct components/services mentioned. Check for external integrations.
 
-3. **Check for service communication patterns:** Count services that exchange messages. Check for async operations (webhooks, queues, background jobs, WebSocket).
-
-4. **Apply thresholds:**
+3. **Apply thresholds:**
    - 3+ steps OR 2+ decisions → generate user flow
    - 3+ components OR external integration → generate architecture
-   - 3+ services communicate OR async operations involved → generate sequence
 
-5. **If thresholds met:** Generate diagram using templates above. Replace placeholders with actual names from requirements. Escape special characters.
+4. **If thresholds met:** Generate diagram using templates above. Replace placeholders with actual names from requirements. Escape special characters.
 
-6. **Verify before including:**
+5. **Verify before including:**
    - Does diagram add value beyond the text?
    - Is it under complexity limits?
    - Would a junior developer find it helpful?
-
-### Diagram Judgment Notes
-
-Every PRD with a System Diagrams section must include a "Diagram Judgment" subsection explaining why each diagram type was included or skipped. This provides transparency to PRD readers and documents the analysis for future updates.
-
-**Format:**
-```markdown
-### Diagram Judgment
-
-This PRD includes the following diagrams based on complexity analysis:
-
-- **User Flow:** [Included/Skipped] - [specific reason with numbers]
-- **Architecture:** [Included/Skipped] - [specific reason with numbers]
-- **Sequence:** [Included/Skipped] - [specific reason with numbers]
-```
-
-**Good judgment notes cite specific triggers:**
-- "Included - 4 sequential steps with 2 decision points (file upload workflow)"
-- "Included - 5 components interact (Frontend, API, Queue, Worker, DB)"
-- "Skipped - No async operations or multi-service choreography"
-- "Skipped - Only 2 participants, interaction clear from text"
-
-**Bad judgment notes are vague:**
-- "Included for clarity" (why?)
-- "Skipped because simple" (what makes it simple?)
-
-Always cite the specific worthiness trigger (numbers, patterns) rather than generic statements.
-
----
-
-## Step 2.6: Reference Generation (Conditional)
-
-Before finalizing the PRD, analyze if inline citations would add value. References provide accountability for technical recommendations by linking to official documentation, allowing readers to verify AI-generated advice.
-
-### Citation Worthiness Analysis
-
-**CITE (non-obvious recommendations):**
-- Specialized/lesser-known libraries (BullMQ, better-sse, Zod)
-- Complex auth patterns requiring spec understanding (OAuth 2.0 PKCE, WebAuthn) → cite RFC/spec
-- External API integrations (Stripe, Twilio, Auth0, SendGrid) → cite official API reference docs, NOT marketing pages
-- Academic techniques or algorithms with formal definitions → cite papers, RFCs, or authoritative specs
-- Protocol implementations (WebSocket, SSE, GraphQL subscriptions) → cite IETF/W3C specs
-
-**SKIP (obvious/ubiquitous):**
-- React, Vue, Angular, Node.js, Express (unless specific non-obvious feature)
-- PostgreSQL, MySQL, MongoDB (unless specific advanced feature)
-- Standard patterns (REST API, CRUD, MVC)
-- TypeScript, JavaScript (language choices)
-
-### Citation Format
-
-Inline format: `[N]` marker immediately after the recommendation.
-
-Example text:
-```
-The authentication flow should use OAuth 2.0 with PKCE [1] for secure
-token exchange. For the background job queue, consider BullMQ [2].
-```
-
-### Reference Entry Format
-
-Full format for References section:
-```
-[N] **Title** [Source Type]
-    Author/Organization
-    URL or Search: "search terms site:domain.com"
-    *Supports: [what recommendation this backs in which section]*
-```
-
-Source type labels:
-- `[Official Docs]` - Library/framework documentation
-- `[Spec]` - W3C, WHATWG, IETF, TC39 specifications
-- `[Paper]` - Academic papers, RFC documents
-- `[API Reference]` - API-specific documentation
-- `[GitHub]` - Repository README, release notes
-
-### Official Domain Verification
-
-Only cite URLs from official domains. This list provides verified official domains by category.
-
-**Programming Languages:**
-- Python: `docs.python.org`, `peps.python.org`
-- JavaScript/TypeScript: `developer.mozilla.org` (MDN), `tc39.es`, `typescriptlang.org`
-- Go: `go.dev`, `golang.org`, `pkg.go.dev`
-- Rust: `doc.rust-lang.org`, `rust-lang.org`
-
-**Frontend Frameworks:**
-- React: `react.dev` (NOT reactjs.org - deprecated)
-- Next.js: `nextjs.org`
-- Vue: `vuejs.org`
-- Angular: `angular.dev` (NOT angular.io - deprecated)
-- Svelte: `svelte.dev`
-
-**Backend/Runtime:**
-- Node.js: `nodejs.org`
-- Deno: `deno.land`, `deno.com`
-- Express: `expressjs.com`
-- Fastify: `fastify.io`
-
-**Databases:**
-- PostgreSQL: `postgresql.org`
-- MongoDB: `docs.mongodb.com`, `mongodb.com/docs`
-- Redis: `redis.io`
-- MySQL: `dev.mysql.com`
-
-**ORMs/Data Access:**
-- Prisma: `prisma.io`
-- Drizzle: `orm.drizzle.team`
-- TypeORM: `typeorm.io`
-
-**Cloud Providers:**
-- AWS: `docs.aws.amazon.com`, `aws.amazon.com`
-- Google Cloud: `cloud.google.com`
-- Azure: `docs.microsoft.com`, `learn.microsoft.com`
-
-**APIs/Services:**
-- Stripe: `docs.stripe.com`, `stripe.com/docs`
-- GitHub: `docs.github.com`
-- Auth0: `auth0.com/docs`
-- Twilio: `twilio.com/docs`
-
-**Standards/Specs:**
-- W3C: `w3.org`
-- WHATWG: `html.spec.whatwg.org`, `whatwg.org`
-- IETF: `datatracker.ietf.org`, `tools.ietf.org`
-- MDN (Web APIs): `developer.mozilla.org`
-
-### Search Hint Fallback
-
-When URL certainty is low, use search hint instead of potentially hallucinated URLs:
-```
-[3] **Stripe Payment Intents API** [Official Docs]
-    Stripe
-    Search: "stripe payment intents api reference site:stripe.com"
-    *Supports: Payment processing flow in US-005*
-```
-
-Use search hints when:
-- Exact URL path uncertain (deep links, version-specific pages)
-- Documentation site has complex structure
-- URL might have changed since training data
-
-### Conditional Inclusion Rules
-
-1. **Minimum 3 citations** to include References section
-2. Count citations while writing PRD, only generate References section if threshold met
-3. Every `[N]` marker in body must have corresponding entry in References
-4. References section appears after Open Questions, before Checklist
-
-### Section Placement
-
-PRD Structure with References:
-```
-PRD Structure:
-├── Introduction
-├── Goals
-├── User Stories
-├── Functional Requirements
-├── Non-Goals
-├── Design Considerations
-├── Technical Considerations
-├── System Diagrams (conditional)
-├── Success Metrics
-├── Open Questions
-├── References (conditional) ← NEW
-└── Checklist
-```
-
-### Anti-Patterns to Avoid
-
-- Citing tutorials or blog posts (only official documentation)
-- Hallucinating URLs (use search hint if uncertain)
-- Over-citing obvious tools (skip React unless specific feature)
-- Orphaned references (every entry needs inline marker)
-- Using deprecated domains (react.dev not reactjs.org)
-
-### Verification Date
-
-Every References section must start with:
-```
-*References verified on YYYY-MM-DD*
-```
-
-This provides accountability for freshness.
 
 ---
 
@@ -665,23 +351,13 @@ Add priority levels to tasks so users can focus on what matters most. Tasks can 
 ## Technical Considerations
 
 - Reuse existing badge component with color variants
-- Filter state managed via URL search params using `nuqs` [1] for type-safe URL state
+- Filter state managed via URL search params
 - Priority stored in database, not computed
 - Task List UI component renders priority badges
-- API Server handles priority updates via optimistic updates pattern [2]
+- API Server handles priority updates
 - Tasks Table stores priority field
-- Consider using `Zod` [3] for runtime validation of priority values at API boundary
-- Real-time priority sync across tabs uses Broadcast Channel API [4]
 
 ## System Diagrams
-
-### Diagram Judgment
-
-This PRD includes the following diagrams based on complexity analysis:
-
-- **User Flow:** Included - 6 sequential steps with 2 decision points (priority change workflow with validation)
-- **Architecture:** Included - 4 components interact (Task List UI, Edit Modal, API Server, Tasks Table)
-- **Sequence:** Skipped - Simple request-response pattern with no async operations or multi-service communication
 
 This section visualizes the task priority user journey and system architecture to clarify data flow and UI interactions.
 
@@ -731,30 +407,6 @@ flowchart LR
 
 - Should priority affect task ordering within a column?
 - Should we add keyboard shortcuts for priority changes?
-
-## References
-
-*References verified on 2026-01-26*
-
-[1] **nuqs - Type-safe URL Query State** [Official Docs]
-    47ng
-    https://nuqs.47ng.com/
-    *Supports: URL state management recommendation in Technical Considerations*
-
-[2] **Optimistic Updates** [Official Docs]
-    TanStack Query
-    Search: "tanstack query optimistic updates guide site:tanstack.com"
-    *Supports: Update pattern recommendation in Technical Considerations*
-
-[3] **Zod Documentation** [Official Docs]
-    Colin McDonnell
-    https://zod.dev/
-    *Supports: Validation library recommendation in Technical Considerations*
-
-[4] **Broadcast Channel API** [Spec]
-    WHATWG HTML Living Standard
-    https://html.spec.whatwg.org/multipage/web-messaging.html#broadcasting-to-other-browsing-contexts
-    *Supports: Cross-tab sync recommendation in Technical Considerations*
 ```
 
 ---
@@ -774,22 +426,8 @@ Before saving the PRD:
 
 - [ ] If user journey has 3+ steps or 2+ decisions, user flow diagram included
 - [ ] If feature has 3+ components or external integrations, architecture diagram included
-- [ ] If 3+ services communicate or async operations involved, sequence diagram included
-- [ ] Diagram Judgment subsection included explaining why each diagram type included or skipped
 - [ ] Diagrams use proper Mermaid syntax (alphanumeric node IDs with underscores, no lowercase 'o'/'x' starts)
 - [ ] Special characters in labels wrapped in quotes
 - [ ] Diagrams render correctly in markdown preview (verify before saving)
 - [ ] Each diagram has purpose statement explaining what it shows
-- [ ] Diagrams stay within complexity limits (max 10 nodes for flows, max 8 for architecture, max 7 participants for sequences)
-
-### Reference Verification (when applicable)
-
-- [ ] If 3+ non-obvious recommendations made, References section included
-- [ ] All inline citations [N] have corresponding entry in References section
-- [ ] No orphaned references (every reference has inline citation)
-- [ ] URLs use official domains only (check against domain list)
-- [ ] Search hints used when URL certainty is low
-- [ ] Source type labels are appropriate ([Official Docs], [Spec], [Paper], etc.)
-- [ ] Each reference includes "Supports:" context linking to PRD section
-- [ ] Verification date present at top of References section
-- [ ] No tutorials, Stack Overflow, or blog citations
+- [ ] Diagrams stay within complexity limits (max 10 nodes for flows, max 8 for architecture)
