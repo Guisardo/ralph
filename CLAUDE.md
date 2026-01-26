@@ -159,10 +159,54 @@ Before any Jira operation, use this check pattern:
 
 ### When Jira Integration is Active
 
-When a story HAS a jiraKey (set by /sync-jira skill):
-- On story start: Transition ticket to "In Progress" (if configured in .ralph/jira.json)
-- On story completion: Transition ticket to "Done" and add comment with learnings
-- On story failure: Leave ticket in current state, add failure comment
+When a story HAS a jiraKey (set by /sync-jira skill), Ralph performs Jira status updates at key workflow points.
+
+#### On Story Start (Before Implementation)
+
+When you pick a story to work on and it has a valid jiraKey:
+
+1. **Read Jira configuration**: Load `.ralph/jira.json` to get the `statusMapping.start` transition name
+
+2. **Transition the ticket to In Progress**:
+   ```
+   Use MCP tool: jira-transition-issue (or atlassian_jira_transition_issue)
+   Parameters:
+     - issueKey: story.jiraKey (e.g., "PROJ-123")
+     - transition: statusMapping.start (e.g., "In Progress")
+   ```
+
+3. **Add start comment to ticket**:
+   ```
+   Use MCP tool: jira-add-comment (or atlassian_jira_add_comment)
+   Parameters:
+     - issueKey: story.jiraKey
+     - body: "Started by Ralph agent"
+   ```
+
+4. **Handle failures gracefully**:
+   - If transition fails (wrong status, permission error): Log brief note in progress.txt, continue with implementation
+   - If comment fails: Log brief note, continue with implementation
+   - If MCP tools unavailable: Skip silently, continue with implementation
+   - **Never abort the workflow due to Jira errors**
+
+Example workflow:
+```
+1. Read prd.json → find story US-007 with jiraKey: "PROJ-456"
+2. Read .ralph/jira.json → statusMapping.start = "In Progress"
+3. Call jira-transition-issue(issueKey="PROJ-456", transition="In Progress")
+4. Call jira-add-comment(issueKey="PROJ-456", body="Started by Ralph agent")
+5. Begin implementing the story...
+```
+
+#### On Story Completion (After Successful Commit)
+
+- Transition ticket to "Done" and add comment with learnings
+- Details covered in US-008
+
+#### On Story Failure
+
+- Leave ticket in current state with failure comment
+- Details covered in US-008
 
 All Jira operations are non-blocking - failures do not stop the workflow.
 
