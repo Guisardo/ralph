@@ -315,6 +315,145 @@ Example workflow:
 6. End iteration (do not commit broken code)
 ```
 
+#### When Splitting Stories (Subtask Creation)
+
+When Ralph determines a user story is too large and needs to be split into smaller parts, and the parent story has a valid jiraKey, create subtasks in Jira to track each part.
+
+**When to create subtasks:**
+- When a story's scope exceeds what can be completed in one iteration
+- When you identify distinct sub-components that should be tracked separately
+- When acceptance criteria naturally break into independent deliverables
+
+**Step 1: Create subtasks for each split part**
+
+For each sub-part identified during story splitting:
+
+```
+Use MCP tool: jira-create-issue (or atlassian_jira_create_issue)
+Parameters:
+  - projectKey: from .ralph/jira.json
+  - issueType: subtaskIssueType from .ralph/jira.json (typically "Sub-task")
+  - parent: story.jiraKey (the parent story's Jira key)
+  - summary: "[{parentStoryId}:{subtaskNumber}] {subtask description}"
+  - description: <subtask description in Jira wiki markup>
+```
+
+**Step 2: Subtask summary format**
+
+Subtask summaries MUST include the parent story reference for traceability:
+
+```
+Format: [{ParentStoryId}:{SubtaskNumber}] {Brief description}
+
+Examples:
+- [US-005:1] Implement data validation layer
+- [US-005:2] Add error handling for edge cases
+- [US-005:3] Create unit tests for validation
+```
+
+**Step 3: Subtask description format** (Jira wiki markup):
+
+```
+h2. Subtask of {ParentStoryId}: {Parent Story Title}
+
+h3. Description
+{Detailed description of this specific subtask}
+
+h3. Scope
+* {Specific deliverable 1}
+* {Specific deliverable 2}
+
+h3. Acceptance Criteria
+* [ ] {Subtask-specific criterion 1}
+* [ ] {Subtask-specific criterion 2}
+
+h3. Parent Story Context
+This subtask is part of: [{ParentStoryId}|{jiraBaseUrl}/browse/{parentJiraKey}]
+```
+
+**Step 4: Track subtasks in prd.json**
+
+After creating subtasks, update the parent story in prd.json to track them:
+
+```json
+{
+  "id": "US-005",
+  "title": "Original large story",
+  "jiraKey": "PROJ-100",
+  "subtasks": [
+    {"id": "US-005:1", "jiraKey": "PROJ-101", "passes": false},
+    {"id": "US-005:2", "jiraKey": "PROJ-102", "passes": false},
+    {"id": "US-005:3", "jiraKey": "PROJ-103", "passes": false}
+  ],
+  "passes": false
+}
+```
+
+**Step 5: Parent ticket completion rules**
+
+The parent story ticket follows these completion rules:
+
+1. **Parent stays open**: The parent ticket remains in "In Progress" state while subtasks are being worked on
+2. **Individual subtask completion**: Each subtask is transitioned to Done independently when completed
+3. **Parent auto-completion**: When ALL subtasks have `passes: true`:
+   - Transition the parent ticket to Done
+   - Add summary comment listing all completed subtasks
+4. **Partial completion handling**: If some subtasks pass but others fail:
+   - Parent remains In Progress
+   - Add comment noting which subtasks are complete
+
+**Step 6: Working on subtasks**
+
+When picking work, subtasks take priority over their parent:
+
+```
+1. Read prd.json
+2. If story has subtasks array with any passes: false:
+   - Work on the first subtask where passes: false
+   - Use subtask's jiraKey for status updates
+3. If story has no subtasks (or all subtasks pass):
+   - Work on the story itself
+```
+
+**Example subtask creation workflow:**
+
+```
+1. Pick story US-005 with jiraKey: "PROJ-100" - determine it's too large
+2. Identify 3 logical subtasks
+3. Read .ralph/jira.json → subtaskIssueType = "Sub-task", projectKey = "PROJ"
+4. Create subtask 1:
+   jira-create-issue(
+     projectKey="PROJ",
+     issueType="Sub-task",
+     parent="PROJ-100",
+     summary="[US-005:1] Implement data validation layer",
+     description="<wiki markup>"
+   ) → returns "PROJ-101"
+5. Create subtask 2: → returns "PROJ-102"
+6. Create subtask 3: → returns "PROJ-103"
+7. Update prd.json US-005 with subtasks array
+8. Add comment to parent PROJ-100:
+   "Story split into 3 subtasks: PROJ-101, PROJ-102, PROJ-103"
+9. Begin working on US-005:1 (first subtask)
+```
+
+**Example subtask completion workflow:**
+
+```
+1. Complete US-005:1 implementation, commit succeeds
+2. Transition PROJ-101 (subtask) to Done
+3. Add completion comment to PROJ-101
+4. Update prd.json: US-005:1 passes = true
+5. Check: Are all subtasks complete? No (2 remaining)
+6. Parent PROJ-100 stays In Progress
+7. Next iteration picks US-005:2
+...
+8. When US-005:3 completes and all subtasks pass:
+   - Transition PROJ-100 (parent) to Done
+   - Add summary comment: "All subtasks complete: PROJ-101 ✓, PROJ-102 ✓, PROJ-103 ✓"
+   - Update prd.json: US-005 passes = true
+```
+
 All Jira operations are non-blocking - failures do not stop the workflow.
 
 ## Important
