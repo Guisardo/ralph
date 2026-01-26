@@ -306,32 +306,100 @@ This map is used in Step 6 to update prd.json.
 
 ## Step 6: Update prd.json
 
-After all tickets are created, update prd.json:
+After all tickets are created, update prd.json with Jira references. This is **critical** for Ralph's Jira status updates to work during story execution.
 
-### Add Epic Key
+### Update Process
+
+```
+1. Read current prd.json content
+2. Add jiraEpicKey at the project level
+3. For each story in userStories:
+   a. Find the matching entry in ticketMap (from Step 5)
+   b. Add jiraKey field with the Jira issue key
+4. Write updated prd.json back to disk
+5. Verify the file was written successfully
+```
+
+### Add Epic Key at Project Level
+
+Set `jiraEpicKey` to the epic key returned from Step 4:
 
 ```json
 {
-  "project": "...",
-  "branchName": "...",
+  "project": "Ralph Jira Integration",
+  "branchName": "ralph/jira-integration",
   "description": "...",
-  "jiraEpicKey": "PROJ-100",  // ADD THIS
+  "jiraEpicKey": "PROJ-100",
   "userStories": [...]
 }
 ```
 
-### Add Story Keys
+### Add Story Keys to Each User Story
 
+Using the `ticketMap` from Step 5, add `jiraKey` to each story:
+
+```javascript
+// Pseudocode for updating stories
+for (const story of prd.userStories) {
+  const jiraKey = ticketMap[story.id];  // e.g., "PROJ-101"
+  if (jiraKey) {
+    story.jiraKey = jiraKey;
+  } else {
+    story.jiraKey = null;  // Story failed to create in Jira
+  }
+}
+```
+
+### Example: Before and After
+
+**Before sync-jira:**
 ```json
 {
+  "project": "TaskApp",
+  "branchName": "ralph/task-status",
+  "description": "Task Status Feature",
+  "jiraEpicKey": null,
   "userStories": [
     {
       "id": "US-001",
-      "title": "...",
-      "jiraKey": "PROJ-101",  // ADD THIS to each story
-      ...
+      "title": "Add status field",
+      "priority": 1,
+      "passes": false,
+      "notes": "",
+      "jiraKey": null
     }
   ]
+}
+```
+
+**After sync-jira:**
+```json
+{
+  "project": "TaskApp",
+  "branchName": "ralph/task-status",
+  "description": "Task Status Feature",
+  "jiraEpicKey": "PROJ-100",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add status field",
+      "priority": 1,
+      "passes": false,
+      "notes": "",
+      "jiraKey": "PROJ-101"
+    }
+  ]
+}
+```
+
+### Handling Missing jiraKey Fields
+
+If the original prd.json was created before Jira integration existed (no `jiraKey` fields), add them during the update:
+
+```javascript
+// Add jiraKey field if it doesn't exist
+if (!story.hasOwnProperty('jiraKey')) {
+  story.jiraKey = ticketMap[story.id] || null;
 }
 ```
 
@@ -339,31 +407,48 @@ After all tickets are created, update prd.json:
 
 ## Step 7: Output Summary
 
-Display a summary of what was created:
+Display a comprehensive summary of what was created. This summary helps users verify the sync was successful and provides quick access to the Jira links.
+
+### Summary Format
 
 ```
-## Jira Sync Complete
+## Jira Sync Complete ✓
 
 ### Epic Created
 - **{epicKey}**: [PRD] {project name}
-  {atlassianSiteUrl}/browse/{epicKey}
+- Link: {atlassianSiteUrl}/browse/{epicKey}
 
-### Story Tickets Created
-| Story ID | Jira Key | Title |
-|----------|----------|-------|
-| US-001   | PROJ-101 | Story title 1 |
-| US-002   | PROJ-102 | Story title 2 |
-| ...      | ...      | ... |
+### Story Tickets Created ({count} tickets)
+
+| Story ID | Jira Key | Title | Link |
+|----------|----------|-------|------|
+| US-001   | PROJ-101 | Configure Atlassian MCP... | [PROJ-101]({url}) |
+| US-002   | PROJ-102 | Create Jira config file... | [PROJ-102]({url}) |
+| US-003   | PROJ-103 | Add graceful degradation... | [PROJ-103]({url}) |
+| ...      | ...      | ... | ... |
 
 ### prd.json Updated
-- Added `jiraEpicKey: "{epicKey}"`
-- Added `jiraKey` to {count} user stories
+- ✓ Added `jiraEpicKey: "{epicKey}"` at project level
+- ✓ Added `jiraKey` to {count} user stories:
+  - US-001 → PROJ-101
+  - US-002 → PROJ-102
+  - US-003 → PROJ-103
+  - ...
 
 ### Next Steps
 1. Run Ralph to start implementing: `./ralph.sh`
-2. Tickets will auto-update as stories complete
+2. Tickets will auto-transition as stories complete (In Progress → Done)
 3. View epic in Jira: {atlassianSiteUrl}/browse/{epicKey}
+4. View project board: {atlassianSiteUrl}/jira/software/projects/{projectKey}/board
 ```
+
+### Key Information to Include
+
+1. **Epic key and direct link** - Users need quick access to the parent epic
+2. **All story keys with links** - Complete traceability from PRD to Jira
+3. **prd.json update confirmation** - Verify the local file was updated
+4. **Mapping summary** - Show which story ID maps to which Jira key
+5. **Next steps** - Guide users on what to do after sync
 
 ---
 

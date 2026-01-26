@@ -22,6 +22,7 @@ Take a PRD (markdown file or text) and convert it to `prd.json` in your ralph di
   "project": "[Project Name]",
   "branchName": "ralph/[feature-name-kebab-case]",
   "description": "[Feature description from PRD title/intro]",
+  "jiraEpicKey": null,
   "userStories": [
     {
       "id": "US-001",
@@ -34,7 +35,8 @@ Take a PRD (markdown file or text) and convert it to `prd.json` in your ralph di
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "",
+      "jiraKey": null
     }
   ]
 }
@@ -253,6 +255,7 @@ Add ability to mark tasks with different statuses.
   "project": "TaskApp",
   "branchName": "ralph/task-status",
   "description": "Task Status Feature - Track task progress with status indicators",
+  "jiraEpicKey": null,
   "userStories": [
     {
       "id": "US-001",
@@ -267,7 +270,8 @@ Add ability to mark tasks with different statuses.
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "",
+      "jiraKey": null
     },
     {
       "id": "US-002",
@@ -283,7 +287,8 @@ Add ability to mark tasks with different statuses.
       ],
       "priority": 2,
       "passes": false,
-      "notes": ""
+      "notes": "",
+      "jiraKey": null
     },
     {
       "id": "US-003",
@@ -300,7 +305,8 @@ Add ability to mark tasks with different statuses.
       ],
       "priority": 3,
       "passes": false,
-      "notes": ""
+      "notes": "",
+      "jiraKey": null
     },
     {
       "id": "US-004",
@@ -316,7 +322,8 @@ Add ability to mark tasks with different statuses.
       ],
       "priority": 4,
       "passes": false,
-      "notes": ""
+      "notes": "",
+      "jiraKey": null
     },
     {
       "id": "US-005",
@@ -333,7 +340,8 @@ Add ability to mark tasks with different statuses.
       ],
       "priority": 5,
       "passes": false,
-      "notes": "This story runs AFTER all feature stories complete. It validates the complete implementation."
+      "notes": "",
+      "jiraKey": null
     }
   ]
 }
