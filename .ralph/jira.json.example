@@ -41,11 +41,13 @@
   "//statusMapping.start": "Transition name when Ralph starts working on a story. Moves ticket to active state.",
   "//statusMapping.done": "Transition name when Ralph completes a story successfully.",
   "//statusMapping.fail": "Transition name when Ralph fails to complete a story. Typically stays In Progress for manual follow-up.",
+  "//statusMapping.cancel": "Transition name when /cancel-jira is run. Common values: 'Cancelled', 'Won't Do'. If not set, skill tries common defaults.",
 
   "statusMapping": {
     "start": "In Progress",
     "done": "Done",
-    "fail": "In Progress"
+    "fail": "In Progress",
+    "cancel": "Cancelled"
   },
 
   "// OPTIONAL ADVANCED SETTINGS": "=============================================",
