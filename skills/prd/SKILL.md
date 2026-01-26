@@ -154,13 +154,27 @@ Before finalizing the PRD, analyze if diagrams would add value. Diagrams are pow
 - Standard CRUD with obvious architecture
 - All components clearly described in text
 
+### Sequence Diagram Worthiness
+
+**Generate sequence diagram IF:**
+- 3+ services/participants communicate in a flow, OR
+- Async operations involved (webhooks, message queues, background jobs, WebSocket push), OR
+- Complex request-response chains where timing/order matters (auth flows, payment processing, multi-step API orchestration)
+
+**SKIP if:**
+- Simple single API call (request-response obvious)
+- No external services or async operations
+- Interaction already clear from architecture diagram
+- Only 2 participants (use text description instead)
+
 ### Complexity Limits
 
 To keep diagrams readable and useful:
 - **User flows:** Maximum 10 nodes. If requirements suggest more, either split into multiple diagrams or skip entirely (feature too complex to visualize effectively)
 - **Architecture:** Maximum 8 nodes. Focus on primary components, not every service detail
+- **Sequences:** Maximum 7 participants. Sequence diagrams with more participants become horizontal scroll nightmares
 
-If a feature exceeds these limits, it's a signal that the PRD may need to be split into smaller features.
+If a feature exceeds these limits, either split into multiple focused diagrams or skip entirely. Exceeding limits signals the PRD may need to be split into smaller features.
 
 ### Diagram Templates
 
@@ -208,6 +222,101 @@ flowchart LR
 - `-->` for primary data flow
 - `-.->` for optional/cache-miss/fallback paths
 
+#### Sequence Diagram Templates (sequenceDiagram)
+
+Sequence diagrams use different syntax than flowcharts. Use `sequenceDiagram` directive, `actor` for humans, and `participant` for services.
+
+**Arrow conventions:**
+- `->>` for synchronous request (waits for response)
+- `-->>` for synchronous response (returning)
+- `--)` for async message (fire and forget, webhook, queue)
+
+##### Basic Sequence (Sync Request-Response)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Frontend
+    participant API as Backend
+    participant DB as Database
+
+    User->>UI: Initiate action
+    UI->>API: POST /api/action
+    activate API
+    API->>DB: Query data
+    DB-->>API: Results
+    API-->>UI: 200 OK + data
+    deactivate API
+    UI->>User: Display result
+```
+
+**Key patterns:**
+- `actor` for human users, `participant X as Label` for services
+- `activate`/`deactivate` shows processing duration
+- Pair requests with responses for sync calls
+
+##### Async Operations (Queue, Webhooks)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Frontend
+    participant API as Backend
+    participant Queue as Message Queue
+    participant Worker as Background Worker
+
+    User->>UI: Upload file
+    UI->>API: POST /upload
+    API->>Queue: Enqueue processing job
+    API-->>UI: 202 Accepted (job ID)
+    UI->>User: "Processing..."
+
+    Queue--)Worker: Process job
+    activate Worker
+    Worker->>Worker: Process file
+    deactivate Worker
+    Worker--)API: Webhook: job complete
+    API--)UI: WebSocket: file ready
+    UI->>User: "Complete!"
+```
+
+**Key patterns:**
+- `--)` for async messages (no response expected)
+- No response arrow for fire-and-forget async
+- WebSocket push shown as async from API to UI
+
+##### Auth Flow with Alt/Else (Conditional Paths)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Frontend
+    participant API as Backend
+    participant Auth as Auth Service
+    participant DB as Database
+
+    User->>UI: Login with credentials
+    UI->>API: POST /auth/login
+    API->>Auth: Validate credentials
+    Auth->>DB: Lookup user
+    DB-->>Auth: User record
+
+    alt Valid credentials
+        Auth-->>API: Token generated
+        API-->>UI: 200 OK + token
+        UI->>User: Redirect to dashboard
+    else Invalid credentials
+        Auth-->>API: Auth failed
+        API-->>UI: 401 Unauthorized
+        UI->>User: Show error message
+    end
+```
+
+**Key patterns:**
+- `alt`/`else`/`end` for conditional flows
+- Show both success and failure paths
+- `end` keyword closes the alt block
+
 ### Character Escaping Rules
 
 To prevent Mermaid syntax errors:
@@ -226,6 +335,23 @@ To prevent Mermaid syntax errors:
    ```
 
 4. **Stick to classic syntax:** Use v10-compatible shapes for maximum GitHub compatibility. Avoid v11.3.0+ generalized shape syntax.
+
+#### Sequence Diagram Escaping Additions
+
+5. **Sequence reserved keywords:** Avoid these as participant names or message text:
+   - `end`, `loop`, `alt`, `else`, `opt`, `par`, `and`, `critical`, `option`, `break`, `rect`, `note`
+   - If needed, wrap in quotes: `participant "End User" as EndUser`
+
+6. **Special characters in aliases:**
+   ```mermaid
+   participant API as "API Server (v2)"
+   participant DB as "PostgreSQL [Primary]"
+   ```
+
+7. **Line breaks in notes:**
+   ```mermaid
+   Note over API,DB: Multi-line note<br/>with line break
+   ```
 
 ### Section Placement Instructions
 
@@ -246,13 +372,16 @@ When generating a PRD:
 
 2. **After writing Technical Considerations:** Count distinct components/services mentioned. Check for external integrations.
 
-3. **Apply thresholds:**
+3. **Check for service communication patterns:** Count services that exchange messages. Check for async operations (webhooks, queues, background jobs, WebSocket).
+
+4. **Apply thresholds:**
    - 3+ steps OR 2+ decisions → generate user flow
    - 3+ components OR external integration → generate architecture
+   - 3+ services communicate OR async operations involved → generate sequence
 
-4. **If thresholds met:** Generate diagram using templates above. Replace placeholders with actual names from requirements. Escape special characters.
+5. **If thresholds met:** Generate diagram using templates above. Replace placeholders with actual names from requirements. Escape special characters.
 
-5. **Verify before including:**
+6. **Verify before including:**
    - Does diagram add value beyond the text?
    - Is it under complexity limits?
    - Would a junior developer find it helpful?
