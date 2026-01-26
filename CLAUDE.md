@@ -119,6 +119,53 @@ If ALL stories are complete and passing, reply with:
 
 If there are still stories with `passes: false`, end your response normally (another iteration will pick up the next story).
 
+## Jira Integration (Optional)
+
+Ralph supports optional Jira integration for tracking user stories. This integration is **completely optional** and Ralph works normally without it.
+
+### Graceful Degradation Rules
+
+When working on user stories, apply these rules in order:
+
+1. **Check for jiraKey on current story**: Before any Jira operation, check if the current story in prd.json has a `jiraKey` field with a non-null value.
+
+2. **No jiraKey = No Jira operations**: If the story's `jiraKey` is null or missing:
+   - Skip all Jira status updates silently
+   - Do not attempt to call any Atlassian MCP tools
+   - Do not log warnings or errors about missing Jira configuration
+   - Continue with normal Ralph workflow as documented above
+
+3. **MCP not configured = Silent skip**: If the Atlassian MCP server is not configured (tools not available):
+   - Skip all Jira operations silently
+   - Do not log warnings or errors
+   - Continue with normal workflow
+
+4. **Never block on Jira failures**: If a Jira operation fails (e.g., network error, permission denied):
+   - Log a brief note in progress.txt (not an error)
+   - Continue with the story implementation
+   - Do not retry or abort the workflow
+
+### Pre-Jira Check Pattern
+
+Before any Jira operation, use this check pattern:
+
+```
+1. Read prd.json
+2. Find current story by highest priority where passes: false
+3. Check if story.jiraKey exists and is not null
+4. If jiraKey is null/missing → skip Jira operations, continue normally
+5. If jiraKey exists → attempt Jira operation (non-blocking)
+```
+
+### When Jira Integration is Active
+
+When a story HAS a jiraKey (set by /sync-jira skill):
+- On story start: Transition ticket to "In Progress" (if configured in .ralph/jira.json)
+- On story completion: Transition ticket to "Done" and add comment with learnings
+- On story failure: Leave ticket in current state, add failure comment
+
+All Jira operations are non-blocking - failures do not stop the workflow.
+
 ## Important
 
 - Work on ONE story per iteration
