@@ -109,13 +109,153 @@ What this feature will NOT include. Critical for managing scope.
 - Integration points with existing systems
 - Performance requirements
 
-### 8. Success Metrics
+### 8. System Diagrams (Conditional)
+Visual diagrams for user flows and/or architecture. **Only include this section when diagrams are generated** (see Step 2.5 for worthiness criteria).
+
+Each diagram includes:
+- Purpose statement explaining what the diagram shows
+- Mermaid diagram code block
+
+### 9. Success Metrics
 How will success be measured?
 - "Reduce time to complete X by 50%"
 - "Increase conversion rate by 10%"
 
-### 9. Open Questions
+### 10. Open Questions
 Remaining questions or areas needing clarification.
+
+---
+
+## Step 2.5: Diagram Generation (Conditional)
+
+Before finalizing the PRD, analyze if diagrams would add value. Diagrams are powerful for surfacing complexity and missing flows, but should only be included when they genuinely improve understanding.
+
+### User Flow Diagram Worthiness
+
+**Generate user flow diagram IF:**
+- 3+ sequential steps in user journey, OR
+- 2+ decision points (conditional branches), OR
+- Non-obvious navigation flow (branching paths, error recovery)
+
+**SKIP if:**
+- Single linear action ("click button, form submits")
+- Flow described clearly in 1-2 sentences
+- Only one meaningful user action with obvious result
+
+### Architecture Diagram Worthiness
+
+**Generate architecture diagram IF:**
+- 3+ components/services mentioned in Technical Considerations, OR
+- External integrations (APIs, databases, third-party services), OR
+- Complex data flow between components
+
+**SKIP if:**
+- Single component/page
+- Standard CRUD with obvious architecture
+- All components clearly described in text
+
+### Complexity Limits
+
+To keep diagrams readable and useful:
+- **User flows:** Maximum 10 nodes. If requirements suggest more, either split into multiple diagrams or skip entirely (feature too complex to visualize effectively)
+- **Architecture:** Maximum 8 nodes. Focus on primary components, not every service detail
+
+If a feature exceeds these limits, it's a signal that the PRD may need to be split into smaller features.
+
+### Diagram Templates
+
+Use these proven templates to avoid common Mermaid syntax errors.
+
+#### User Flow Template (flowchart TD - Top Down)
+
+```mermaid
+flowchart TD
+    Start([User Action]) --> Step1[First Step]
+    Step1 --> Decision{Decision Point?}
+    Decision -->|Yes| Success[Success Path]
+    Decision -->|No| Alternative[Alternative Path]
+    Alternative --> Step1
+    Success --> End_State([End State])
+```
+
+**Shape conventions:**
+- `([rounded])` for start/end points (user initiates/completes action)
+- `{diamond}` for decision points (yes/no, conditional branches)
+- `[rectangle]` for action steps (what happens)
+- `-->|label|` for labeled connections (conditional branches)
+
+#### Architecture Template (flowchart LR - Left to Right)
+
+```mermaid
+flowchart LR
+    Client[Web Client]
+    API[API Server]
+    Auth[Auth Service]
+    DB[(PostgreSQL)]
+    Cache[(Redis Cache)]
+
+    Client --> API
+    API --> Auth
+    API --> Cache
+    Cache -.-> DB
+    API --> DB
+    Auth --> DB
+```
+
+**Shape conventions:**
+- `[rectangle]` for services/servers/components
+- `[(cylinder)]` for databases and data stores
+- `-->` for primary data flow
+- `-.->` for optional/cache-miss/fallback paths
+
+### Character Escaping Rules
+
+To prevent Mermaid syntax errors:
+
+1. **Node IDs:** Use alphanumeric characters and underscores only. Avoid starting IDs with lowercase 'o' or 'x' (creates circle/cross edges).
+   - Good: `User_Login`, `API_Server`, `DB_Primary`
+   - Bad: `open-modal`, `x-validate`, `user.login`
+
+2. **Reserved keywords:** Capitalize 'end' in labels (`End`, `END`, never lowercase `end`)
+
+3. **Special characters in labels:** Wrap the entire label in quotes when using `()`, `[]`, `#`, `:`, or other special characters:
+   ```mermaid
+   A["User Profile (Settings)"]
+   B["Email [validated]"]
+   C["Tags: #urgent"]
+   ```
+
+4. **Stick to classic syntax:** Use v10-compatible shapes for maximum GitHub compatibility. Avoid v11.3.0+ generalized shape syntax.
+
+### Section Placement Instructions
+
+When diagrams pass worthiness criteria:
+
+1. Insert "## System Diagrams" section after Technical Considerations, before Success Metrics
+2. Include a purpose statement at the start: "This section visualizes the {user journey / system architecture} to clarify {what aspect}."
+3. Add a subsection title for each diagram type included
+4. Include the Mermaid code block with proper syntax
+
+**Only include the System Diagrams section when at least one diagram is generated.** Do not add an empty section.
+
+### Worthiness Analysis Process
+
+When generating a PRD:
+
+1. **After writing Functional Requirements:** Count sequential steps user must complete. Count decision points (if/else, conditional paths).
+
+2. **After writing Technical Considerations:** Count distinct components/services mentioned. Check for external integrations.
+
+3. **Apply thresholds:**
+   - 3+ steps OR 2+ decisions → generate user flow
+   - 3+ components OR external integration → generate architecture
+
+4. **If thresholds met:** Generate diagram using templates above. Replace placeholders with actual names from requirements. Escape special characters.
+
+5. **Verify before including:**
+   - Does diagram add value beyond the text?
+   - Is it under complexity limits?
+   - Would a junior developer find it helpful?
 
 ---
 
@@ -213,6 +353,49 @@ Add priority levels to tasks so users can focus on what matters most. Tasks can 
 - Reuse existing badge component with color variants
 - Filter state managed via URL search params
 - Priority stored in database, not computed
+- Task List UI component renders priority badges
+- API Server handles priority updates
+- Tasks Table stores priority field
+
+## System Diagrams
+
+This section visualizes the task priority user journey and system architecture to clarify data flow and UI interactions.
+
+### User Flow: Changing Task Priority
+
+This diagram shows the user journey for changing a task's priority, including the modal interaction and persistence flow.
+
+```mermaid
+flowchart TD
+    Start([User Views Task List]) --> Click[Click Task to Edit]
+    Click --> Modal[Edit Modal Opens]
+    Modal --> Current[Shows Current Priority]
+    Current --> Select{Select New Priority?}
+    Select -->|Yes| Choose[Choose High/Medium/Low]
+    Select -->|No| Cancel[Close Modal]
+    Choose --> Save[Save Priority]
+    Save --> Update[Badge Updates in List]
+    Update --> End_Flow([Priority Changed])
+    Cancel --> End_Cancel([No Change])
+```
+
+### System Architecture: Priority Feature Components
+
+This diagram illustrates how the priority feature components interact, from the UI layer through the API to the database.
+
+```mermaid
+flowchart LR
+    TaskList[Task List UI]
+    EditModal[Edit Modal]
+    API[API Server]
+    DB[(Tasks Table)]
+
+    TaskList --> EditModal
+    EditModal --> API
+    API --> DB
+    DB --> API
+    API --> TaskList
+```
 
 ## Success Metrics
 
@@ -238,3 +421,13 @@ Before saving the PRD:
 - [ ] Functional requirements are numbered and unambiguous
 - [ ] Non-goals section defines clear boundaries
 - [ ] Saved to `tasks/prd-[feature-name].md`
+
+### Diagram Verification (when applicable)
+
+- [ ] If user journey has 3+ steps or 2+ decisions, user flow diagram included
+- [ ] If feature has 3+ components or external integrations, architecture diagram included
+- [ ] Diagrams use proper Mermaid syntax (alphanumeric node IDs with underscores, no lowercase 'o'/'x' starts)
+- [ ] Special characters in labels wrapped in quotes
+- [ ] Diagrams render correctly in markdown preview (verify before saving)
+- [ ] Each diagram has purpose statement explaining what it shows
+- [ ] Diagrams stay within complexity limits (max 10 nodes for flows, max 8 for architecture)
