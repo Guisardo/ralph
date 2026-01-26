@@ -358,11 +358,12 @@ To prevent Mermaid syntax errors:
 When diagrams pass worthiness criteria:
 
 1. Insert "## System Diagrams" section after Technical Considerations, before Success Metrics
-2. Include a purpose statement at the start: "This section visualizes the {user journey / system architecture} to clarify {what aspect}."
-3. Add a subsection title for each diagram type included
-4. Include the Mermaid code block with proper syntax
+2. Include "### Diagram Judgment" subsection FIRST, explaining why each diagram type was included or skipped
+3. Include a purpose statement: "This section visualizes the {user journey / system architecture / service interactions} to clarify {what aspect}."
+4. Add a subsection title for each diagram type included
+5. Include the Mermaid code block with proper syntax
 
-**Only include the System Diagrams section when at least one diagram is generated.** Do not add an empty section.
+**Only include the System Diagrams section when at least one diagram is generated.** The section starts with diagram judgment notes explaining inclusion decisions, followed by the actual diagrams.
 
 ### Worthiness Analysis Process
 
@@ -385,6 +386,33 @@ When generating a PRD:
    - Does diagram add value beyond the text?
    - Is it under complexity limits?
    - Would a junior developer find it helpful?
+
+### Diagram Judgment Notes
+
+Every PRD with a System Diagrams section must include a "Diagram Judgment" subsection explaining why each diagram type was included or skipped. This provides transparency to PRD readers and documents the analysis for future updates.
+
+**Format:**
+```markdown
+### Diagram Judgment
+
+This PRD includes the following diagrams based on complexity analysis:
+
+- **User Flow:** [Included/Skipped] - [specific reason with numbers]
+- **Architecture:** [Included/Skipped] - [specific reason with numbers]
+- **Sequence:** [Included/Skipped] - [specific reason with numbers]
+```
+
+**Good judgment notes cite specific triggers:**
+- "Included - 4 sequential steps with 2 decision points (file upload workflow)"
+- "Included - 5 components interact (Frontend, API, Queue, Worker, DB)"
+- "Skipped - No async operations or multi-service choreography"
+- "Skipped - Only 2 participants, interaction clear from text"
+
+**Bad judgment notes are vague:**
+- "Included for clarity" (why?)
+- "Skipped because simple" (what makes it simple?)
+
+Always cite the specific worthiness trigger (numbers, patterns) rather than generic statements.
 
 ---
 
@@ -488,6 +516,14 @@ Add priority levels to tasks so users can focus on what matters most. Tasks can 
 
 ## System Diagrams
 
+### Diagram Judgment
+
+This PRD includes the following diagrams based on complexity analysis:
+
+- **User Flow:** Included - 6 sequential steps with 2 decision points (priority change workflow with validation)
+- **Architecture:** Included - 4 components interact (Task List UI, Edit Modal, API Server, Tasks Table)
+- **Sequence:** Skipped - Simple request-response pattern with no async operations or multi-service communication
+
 This section visualizes the task priority user journey and system architecture to clarify data flow and UI interactions.
 
 ### User Flow: Changing Task Priority
@@ -555,8 +591,10 @@ Before saving the PRD:
 
 - [ ] If user journey has 3+ steps or 2+ decisions, user flow diagram included
 - [ ] If feature has 3+ components or external integrations, architecture diagram included
+- [ ] If 3+ services communicate or async operations involved, sequence diagram included
+- [ ] Diagram Judgment subsection included explaining why each diagram type included or skipped
 - [ ] Diagrams use proper Mermaid syntax (alphanumeric node IDs with underscores, no lowercase 'o'/'x' starts)
 - [ ] Special characters in labels wrapped in quotes
 - [ ] Diagrams render correctly in markdown preview (verify before saving)
 - [ ] Each diagram has purpose statement explaining what it shows
-- [ ] Diagrams stay within complexity limits (max 10 nodes for flows, max 8 for architecture)
+- [ ] Diagrams stay within complexity limits (max 10 nodes for flows, max 8 for architecture, max 7 participants for sequences)
