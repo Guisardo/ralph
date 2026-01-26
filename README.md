@@ -119,6 +119,7 @@ Ralph will:
 | `progress.txt` | Append-only learnings for future iterations |
 | `skills/prd/` | Skill for generating PRDs |
 | `skills/ralph/` | Skill for converting PRDs to JSON |
+| `skills/sync-jira/` | Skill for pushing PRDs to Jira (creates epic and story tickets) |
 | `flowchart/` | Interactive visualization of how Ralph works |
 | `mcp_servers.json.example` | Example MCP configuration for Jira integration |
 | `.ralph/jira.json.example` | Example per-project Jira configuration template |
