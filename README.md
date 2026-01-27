@@ -119,7 +119,12 @@ Ralph will:
 | `progress.txt` | Append-only learnings for future iterations |
 | `skills/prd/` | Skill for generating PRDs |
 | `skills/ralph/` | Skill for converting PRDs to JSON |
+| `skills/sync-jira/` | Skill for pushing PRDs to Jira (creates epic and story tickets) |
+| `skills/cancel-jira/` | Skill for cancelling all Jira tickets when abandoning a PRD |
 | `flowchart/` | Interactive visualization of how Ralph works |
+| `mcp_servers.json.example` | Example MCP configuration for Jira integration |
+| `.ralph/jira.json.example` | Example per-project Jira configuration template |
+| `.ralph/jira.json` | Per-project Jira settings (copy from example, not tracked) |
 
 ## Flowchart
 
@@ -208,6 +213,130 @@ After copying `prompt.md` (for Amp) or `CLAUDE.md` (for Claude Code) to your pro
 ## Archiving
 
 Ralph automatically archives previous runs when you start a new feature (different `branchName`). Archives are saved to `archive/YYYY-MM-DD-feature-name/`.
+
+## Jira Integration (Optional)
+
+Ralph can optionally sync PRDs to Atlassian Jira, creating epics and tickets that update in real-time as stories are completed. This requires the Atlassian MCP server.
+
+### Prerequisites for Jira Integration
+
+- [Atlassian MCP Server](https://www.npmjs.com/package/@anthropic/mcp-server-atlassian) configured
+- Jira Cloud instance with API access
+- Atlassian API token with required permissions
+
+### Step 1: Install the Atlassian MCP Server
+
+Install the Atlassian MCP server globally:
+
+```bash
+npm install -g @anthropic/mcp-server-atlassian
+```
+
+### Step 2: Configure MCP Server in Claude Code
+
+Add the Atlassian MCP server to your Claude Code MCP configuration at `~/.claude/mcp_servers.json`:
+
+```json
+{
+  "mcpServers": {
+    "atlassian": {
+      "command": "mcp-server-atlassian",
+      "env": {
+        "ATLASSIAN_SITE_URL": "https://your-domain.atlassian.net",
+        "ATLASSIAN_USER_EMAIL": "your-email@example.com",
+        "ATLASSIAN_API_TOKEN": "your-api-token"
+      }
+    }
+  }
+}
+```
+
+**Important**: Credentials are stored in `~/.claude/` (your home directory), not in the repository. Never commit API tokens to version control.
+
+### Step 3: Generate Atlassian API Token
+
+1. Go to [Atlassian Account Settings](https://id.atlassian.com/manage-profile/security/api-tokens)
+2. Click "Create API token"
+3. Give it a descriptive label (e.g., "Ralph Claude Code Integration")
+4. Copy the token and add it to your MCP configuration
+
+### Required Jira Permissions
+
+Your Atlassian account needs these permissions in the target Jira project:
+
+| Permission | Purpose |
+|------------|---------|
+| **Create Issues** | Create epics and story tickets from PRDs |
+| **Transition Issues** | Move tickets between statuses (In Progress, Done) |
+| **Add Comments** | Add implementation notes and learnings to tickets |
+| **Browse Projects** | Read project configuration and issue types |
+| **Edit Issues** | Update ticket descriptions and fields |
+
+### Step 4: Configure Per-Project Jira Settings
+
+Copy the example configuration and customize for your project:
+
+```bash
+# From your project root (where prd.json lives)
+mkdir -p .ralph
+cp /path/to/ralph/.ralph/jira.json.example .ralph/jira.json
+```
+
+Edit `.ralph/jira.json` with your project-specific values:
+
+```json
+{
+  "projectKey": "PROJ",
+  "atlassianSiteUrl": "https://your-domain.atlassian.net",
+  "epicIssueType": "Epic",
+  "storyIssueType": "Story",
+  "subtaskIssueType": "Sub-task",
+  "defaultLabels": ["ralph-generated"],
+  "statusMapping": {
+    "start": "In Progress",
+    "done": "Done",
+    "fail": "In Progress"
+  }
+}
+```
+
+See `.ralph/jira.json.example` for all available configuration options and detailed field documentation.
+
+**Important**: The `.ralph/jira.json` file is gitignored by default since it contains project-specific settings. Each project needs its own configuration.
+
+### Step 5: Sync PRD to Jira
+
+After creating your `prd.json`, run the sync-jira skill:
+
+```
+/sync-jira
+```
+
+This creates:
+- One Jira epic for the PRD
+- One ticket per user story, linked to the epic
+- Updates `prd.json` with Jira ticket references
+
+### Graceful Degradation
+
+Jira integration is completely optional. If not configured:
+- Ralph operates normally without any Jira functionality
+- No errors or warnings are shown
+- All existing Ralph functionality works unchanged
+
+### Troubleshooting MCP Connection
+
+Test the MCP server connection:
+
+```bash
+# Verify MCP server is installed
+which mcp-server-atlassian
+
+# Check Claude Code recognizes the server
+claude mcp list
+```
+
+If the server doesn't appear, verify your `~/.claude/mcp_servers.json` syntax is valid JSON.
 
 ## References
 
