@@ -182,7 +182,12 @@ Ralph only works if there are feedback loops:
 
 ### Browser Verification for UI Stories
 
-Frontend stories must include "Verify in browser using dev-browser skill" in acceptance criteria. Ralph will use the dev-browser skill to navigate to the page, interact with the UI, and confirm changes work.
+Frontend stories must include "Verify in browser using Selenium MCP" in acceptance criteria. Ralph will use Selenium MCP tools to navigate to the page, interact with the UI, and confirm changes work. Available Selenium MCP tools include:
+- `mcp__selenium__start_browser` - Launch Chrome or Firefox
+- `mcp__selenium__navigate` - Navigate to URLs
+- `mcp__selenium__find_element` / `mcp__selenium__click_element` / `mcp__selenium__send_keys` - Interact with elements
+- `mcp__selenium__take_screenshot` - Capture visual verification
+- `mcp__selenium__close_session` - Clean up browser session
 
 ### Stop Condition
 
