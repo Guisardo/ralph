@@ -114,7 +114,7 @@ Each criterion must be something Ralph can CHECK, not something vague.
 
 3. **For UI stories** - Visual verification required
 ```
-"Verify in browser using dev-browser skill"
+"Verify in browser using Selenium MCP"
 ```
 
 ### Unit Test Requirements
@@ -135,7 +135,7 @@ Each story MUST include unit tests that verify its acceptance criteria. Tests sh
 ]
 ```
 
-Frontend stories are NOT complete until visually verified. Ralph will use the dev-browser skill to navigate to the page, interact with the UI, and confirm changes work.
+Frontend stories are NOT complete until visually verified. Ralph will use the Selenium MCP tools to navigate to the page, interact with the UI, and confirm changes work.
 
 ---
 
@@ -283,7 +283,7 @@ Add ability to mark tasks with different statuses.
         "Unit tests verify: StatusBadge component renders correct colors for each status",
         "Typecheck passes",
         "Tests pass",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser using Selenium MCP"
       ],
       "priority": 2,
       "passes": false,
@@ -301,7 +301,7 @@ Add ability to mark tasks with different statuses.
         "Unit tests verify: status change handler calls update action, UI updates on success",
         "Typecheck passes",
         "Tests pass",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser using Selenium MCP"
       ],
       "priority": 3,
       "passes": false,
@@ -318,7 +318,7 @@ Add ability to mark tasks with different statuses.
         "Unit tests verify: filter logic returns correct tasks, URL params update correctly",
         "Typecheck passes",
         "Tests pass",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser using Selenium MCP"
       ],
       "priority": 4,
       "passes": false,
@@ -374,7 +374,7 @@ Before writing prd.json, verify:
 - [ ] Every story has "Typecheck passes" as criterion
 - [ ] Every story with testable logic has "Unit tests verify: [specifics]" criterion
 - [ ] Every story has "Tests pass" as criterion
-- [ ] UI stories have "Verify in browser using dev-browser skill" as criterion
+- [ ] UI stories have "Verify in browser using Selenium MCP" as criterion
 - [ ] Acceptance criteria are verifiable (not vague)
 - [ ] No story depends on a later story
 - [ ] **Final integration tests story exists** with lowest priority

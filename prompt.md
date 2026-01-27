@@ -105,12 +105,14 @@ Only update AGENTS.md if you have **genuinely reusable knowledge** that would he
 
 ## Browser Testing (Required for Frontend Stories)
 
-For any story that changes UI, you MUST verify it works in the browser:
+For any story that changes UI, you MUST verify it works in the browser using Selenium MCP tools:
 
-1. Load the `dev-browser` skill
-2. Navigate to the relevant page
-3. Verify the UI changes work as expected
-4. Take a screenshot if helpful for the progress log
+1. Start a browser session: `mcp__selenium__start_browser` (chrome or firefox)
+2. Navigate to the relevant page: `mcp__selenium__navigate`
+3. Find and interact with elements: `mcp__selenium__find_element`, `mcp__selenium__click_element`, `mcp__selenium__send_keys`
+4. Verify UI changes work as expected: `mcp__selenium__get_element_text`
+5. Take a screenshot if helpful: `mcp__selenium__take_screenshot`
+6. Close the session when done: `mcp__selenium__close_session`
 
 A frontend story is NOT complete until browser verification passes.
 

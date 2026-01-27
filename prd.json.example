@@ -28,7 +28,7 @@
         "Unit tests verify: PriorityBadge component renders correct colors for each priority level",
         "Typecheck passes",
         "Tests pass",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser using Selenium MCP"
       ],
       "priority": 2,
       "passes": false,
@@ -45,7 +45,7 @@
         "Unit tests verify: priority selector shows all options, change handler updates task",
         "Typecheck passes",
         "Tests pass",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser using Selenium MCP"
       ],
       "priority": 3,
       "passes": false,
@@ -62,7 +62,7 @@
         "Unit tests verify: filter logic returns correct tasks, URL params update correctly",
         "Typecheck passes",
         "Tests pass",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser using Selenium MCP"
       ],
       "priority": 4,
       "passes": false,
