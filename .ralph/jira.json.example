@@ -1,0 +1,68 @@
+{
+  "//": "=============================================================================",
+  "// RALPH JIRA INTEGRATION CONFIGURATION": "",
+  "//": "=============================================================================",
+  "//": "Copy this file to jira.json and fill in your project-specific values.",
+  "//": "This file should NOT be committed to version control (add to .gitignore).",
+  "//": "For MCP server credentials, see ~/.claude/mcp_servers.json",
+  "//": "=============================================================================",
+
+  "// PROJECT SETTINGS": "=======================================================",
+
+  "//projectKey": "The Jira project key (e.g., 'PROJ', 'DEV', 'TEAM'). Found in your Jira project URL: https://your-domain.atlassian.net/browse/PROJ-123",
+  "projectKey": "PROJ",
+
+  "//atlassianSiteUrl": "Your Atlassian instance URL. Must match the ATLASSIAN_SITE_URL in your MCP configuration.",
+  "atlassianSiteUrl": "https://your-domain.atlassian.net",
+
+  "// ISSUE TYPE MAPPING": "=====================================================",
+  "//": "Configure which Jira issue types to use for PRD elements.",
+  "//": "Run 'jira-get-issue-types' MCP tool to see available types in your project.",
+
+  "//epicIssueType": "Issue type for the PRD epic. Usually 'Epic' but may vary by project configuration.",
+  "epicIssueType": "Epic",
+
+  "//storyIssueType": "Issue type for user stories. Common values: 'Story', 'Task', 'User Story'.",
+  "storyIssueType": "Story",
+
+  "//subtaskIssueType": "Issue type for subtasks when Ralph splits a story. Usually 'Sub-task' or 'Subtask'.",
+  "subtaskIssueType": "Sub-task",
+
+  "// LABELS AND CATEGORIZATION": "==============================================",
+
+  "//defaultLabels": "Array of labels automatically applied to all created tickets. Useful for filtering Ralph-created tickets.",
+  "defaultLabels": ["ralph-generated", "automated"],
+
+  "// STATUS WORKFLOW MAPPING": "================================================",
+  "//": "Maps Ralph workflow states to your Jira project's transition names.",
+  "//": "These must match the EXACT transition names in your Jira workflow.",
+  "//": "Run 'jira-get-transitions' MCP tool on a ticket to see available transitions.",
+
+  "//statusMapping.start": "Transition name when Ralph starts working on a story. Moves ticket to active state.",
+  "//statusMapping.done": "Transition name when Ralph completes a story successfully.",
+  "//statusMapping.fail": "Transition name when Ralph fails to complete a story. Typically stays In Progress for manual follow-up.",
+  "//statusMapping.cancel": "Transition name when /cancel-jira is run. Common values: 'Cancelled', 'Won't Do'. If not set, skill tries common defaults.",
+
+  "statusMapping": {
+    "start": "In Progress",
+    "done": "Done",
+    "fail": "In Progress",
+    "cancel": "Cancelled"
+  },
+
+  "// OPTIONAL ADVANCED SETTINGS": "=============================================",
+
+  "//customFields": "Optional: Map custom field IDs for additional Jira fields. Get IDs from Jira admin or API.",
+  "customFields": {
+    "//storyPoints": "Custom field ID for story points (e.g., 'customfield_10016'). Set to null if not used.",
+    "storyPoints": null,
+    "//sprint": "Custom field ID for sprint assignment. Usually auto-detected.",
+    "sprint": null
+  },
+
+  "//epicLinkField": "Optional: The custom field name for epic links. Usually 'Epic Link' or 'Parent'. Some Jira versions use different field names.",
+  "epicLinkField": "Epic Link",
+
+  "//components": "Optional: Array of component names to add to tickets. Must exist in Jira project.",
+  "components": []
+}
