@@ -3,6 +3,10 @@ prd.json
 progress.txt
 .last-branch
 
+# Per-project Jira configuration (contains project-specific keys)
+# The .example file IS tracked; actual jira.json is NOT
+.ralph/jira.json
+
 # Archive is optional to commit
 # archive/
 
