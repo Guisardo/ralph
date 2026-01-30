@@ -101,11 +101,38 @@ if [[ "$INTERACTIVE" == true ]]; then
 fi
 echo "Starting Ralph - Tool: $TOOL$INTERACTIVE_MSG - Max iterations: $MAX_ITERATIONS"
 
+# Function to map reasoning level to model
+map_reasoning_to_model() {
+  local reasoning_level="$1"
+  case "$reasoning_level" in
+    HIGH) echo "opus" ;;
+    LOW) echo "haiku" ;;
+    MID|*) echo "sonnet" ;;  # Default to sonnet for MID or invalid values
+  esac
+}
+
 for i in $(seq 1 $MAX_ITERATIONS); do
   echo ""
   echo "==============================================================="
   echo "  Ralph Iteration $i of $MAX_ITERATIONS ($TOOL)"
   echo "==============================================================="
+
+  # Extract reasoning level from current story (only for claude tool)
+  MODEL="sonnet"  # Default model
+  if [[ "$TOOL" == "claude" ]] && [ -f "$PRD_FILE" ]; then
+    # Get reasoning level of first incomplete story
+    REASONING_LEVEL=$(jq -r '.userStories[] | select(.passes != true) | .reasoningLevel' "$PRD_FILE" 2>/dev/null | head -1)
+
+    # Validate that reasoning level exists (required field)
+    if [ -z "$REASONING_LEVEL" ] || [ "$REASONING_LEVEL" == "null" ]; then
+      echo "ERROR: Missing reasoningLevel field in prd.json for current story"
+      echo "All user stories must have a reasoningLevel field (HIGH, MID, or LOW)"
+      exit 1
+    fi
+
+    MODEL=$(map_reasoning_to_model "$REASONING_LEVEL")
+    echo "Story reasoning level: $REASONING_LEVEL → Using model: $MODEL"
+  fi
 
   # Run the selected tool with the ralph prompt
   if [[ "$TOOL" == "amp" ]]; then
@@ -113,11 +140,11 @@ for i in $(seq 1 $MAX_ITERATIONS); do
   else
     if [[ "$INTERACTIVE" == true ]]; then
       # Claude Code: interactive mode - user approves tool usage, no --print for interactive UI
-      claude < "$SCRIPT_DIR/CLAUDE.md" || true
+      claude --model "$MODEL" < "$SCRIPT_DIR/CLAUDE.md" || true
       OUTPUT=""  # In interactive mode, we can't capture output easily
     else
       # Claude Code: autonomous mode - use --dangerously-skip-permissions and --print for output
-      OUTPUT=$(claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || true
+      OUTPUT=$(claude --model "$MODEL" --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || true
     fi
   fi
   

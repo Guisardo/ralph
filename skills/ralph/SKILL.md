@@ -36,7 +36,8 @@ Take a PRD (markdown file or text) and convert it to `prd.json` in your ralph di
       "priority": 1,
       "passes": false,
       "notes": "",
-      "jiraKey": null
+      "jiraKey": null,
+      "reasoningLevel": "MID"
     }
   ]
 }
@@ -78,6 +79,44 @@ Stories execute in priority order. Earlier stories must not depend on later ones
 **Wrong order:**
 1. UI component (depends on schema that does not exist yet)
 2. Schema change
+
+---
+
+## Reasoning Level: Choosing the Right Model
+
+**Each story MUST specify a reasoning level to optimize cost and performance.**
+
+Ralph maps reasoning levels to Claude models:
+- **HIGH** → Claude Opus 4.5 (most capable, highest cost, slowest)
+- **MID** → Claude Sonnet 4.5 (balanced, default)
+- **LOW** → Claude Haiku 4.0 (fast, lowest cost, best for simple tasks)
+
+### When to use HIGH reasoning:
+- Complex algorithms or data structures
+- Architectural decisions requiring deep analysis
+- Refactoring with many dependencies
+- Features requiring sophisticated logic
+- Integration tests covering multiple systems
+
+### When to use MID reasoning (default):
+- Standard feature implementation
+- Typical CRUD operations
+- UI components with moderate complexity
+- Most database migrations
+- Standard unit tests
+
+### When to use LOW reasoning:
+- Simple schema changes (add a column)
+- Trivial UI updates (change text, add a button)
+- Configuration file updates
+- Documentation updates
+- Simple test additions
+
+### Cost-Benefit Trade-off:
+
+Opus (HIGH) is ~15x more expensive than Haiku (LOW) and ~3x more expensive than Sonnet (MID). Use HIGH sparingly for genuinely complex work. When in doubt, use MID.
+
+**Rule of thumb:** If you can describe the implementation steps clearly in acceptance criteria, use LOW or MID. If the solution requires exploration or design decisions, use HIGH.
 
 ---
 
@@ -149,6 +188,7 @@ Frontend stories are NOT complete until visually verified. Ralph will use the Se
 6. **Always add**: "Typecheck passes" to every story's acceptance criteria
 7. **Always add**: Unit test criteria to every story with testable logic
 8. **Always add**: A final integration tests story (see below)
+9. **Set reasoning level**: Assign appropriate reasoning level (HIGH/MID/LOW) to each story based on complexity
 
 ---
 
@@ -271,7 +311,8 @@ Add ability to mark tasks with different statuses.
       "priority": 1,
       "passes": false,
       "notes": "",
-      "jiraKey": null
+      "jiraKey": null,
+      "reasoningLevel": "LOW"
     },
     {
       "id": "US-002",
@@ -288,7 +329,8 @@ Add ability to mark tasks with different statuses.
       "priority": 2,
       "passes": false,
       "notes": "",
-      "jiraKey": null
+      "jiraKey": null,
+      "reasoningLevel": "LOW"
     },
     {
       "id": "US-003",
@@ -306,7 +348,8 @@ Add ability to mark tasks with different statuses.
       "priority": 3,
       "passes": false,
       "notes": "",
-      "jiraKey": null
+      "jiraKey": null,
+      "reasoningLevel": "MID"
     },
     {
       "id": "US-004",
@@ -323,7 +366,8 @@ Add ability to mark tasks with different statuses.
       "priority": 4,
       "passes": false,
       "notes": "",
-      "jiraKey": null
+      "jiraKey": null,
+      "reasoningLevel": "MID"
     },
     {
       "id": "US-005",
@@ -341,7 +385,8 @@ Add ability to mark tasks with different statuses.
       "priority": 5,
       "passes": false,
       "notes": "",
-      "jiraKey": null
+      "jiraKey": null,
+      "reasoningLevel": "HIGH"
     }
   ]
 }
@@ -379,3 +424,5 @@ Before writing prd.json, verify:
 - [ ] No story depends on a later story
 - [ ] **Final integration tests story exists** with lowest priority
 - [ ] Integration tests cover all major user flows from original PRD
+- [ ] **Every story has appropriate reasoning level** (default MID if uncertain)
+- [ ] **HIGH reasoning used sparingly** (only genuinely complex stories)
