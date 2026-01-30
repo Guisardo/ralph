@@ -100,15 +100,18 @@ Only update CLAUDE.md if you have **genuinely reusable knowledge** that would he
 4. Run all tests - must pass
 5. Only then commit the changes
 
-## Browser Testing (If Available)
+## Browser Testing (Required for Frontend Stories)
 
-For any story that changes UI, verify it works in the browser if you have browser testing tools configured (e.g., via MCP):
+For any story that changes UI, you MUST verify it works in the browser using Selenium MCP tools:
 
-1. Navigate to the relevant page
-2. Verify the UI changes work as expected
-3. Take a screenshot if helpful for the progress log
+1. Start a browser session: `mcp__selenium__start_browser` (chrome or firefox)
+2. Navigate to the relevant page: `mcp__selenium__navigate`
+3. Find and interact with elements: `mcp__selenium__find_element`, `mcp__selenium__click_element`, `mcp__selenium__send_keys`
+4. Verify UI changes work as expected: `mcp__selenium__get_element_text`
+5. Take a screenshot if helpful: `mcp__selenium__take_screenshot`
+6. Close the session when done: `mcp__selenium__close_session`
 
-If no browser tools are available, note in your progress report that manual browser verification is needed.
+A frontend story is NOT complete until browser verification passes. If Selenium MCP is not configured, note in your progress report that manual browser verification is needed.
 
 ## Stop Condition
 
