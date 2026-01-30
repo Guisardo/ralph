@@ -10,7 +10,9 @@
       "acceptanceCriteria": [
         "Add priority column to tasks table: 'high' | 'medium' | 'low' (default 'medium')",
         "Generate and run migration successfully",
-        "Typecheck passes"
+        "Unit tests verify: priority column exists, defaults to 'medium', accepts only valid values",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 1,
       "passes": false,
@@ -23,7 +25,9 @@
       "acceptanceCriteria": [
         "Each task card shows colored priority badge (red=high, yellow=medium, gray=low)",
         "Priority visible without hovering or clicking",
+        "Unit tests verify: PriorityBadge component renders correct colors for each priority level",
         "Typecheck passes",
+        "Tests pass",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 2,
@@ -38,7 +42,9 @@
         "Priority dropdown in task edit modal",
         "Shows current priority as selected",
         "Saves immediately on selection change",
+        "Unit tests verify: priority selector shows all options, change handler updates task",
         "Typecheck passes",
+        "Tests pass",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 3,
@@ -53,12 +59,32 @@
         "Filter dropdown with options: All | High | Medium | Low",
         "Filter persists in URL params",
         "Empty state message when no tasks match filter",
+        "Unit tests verify: filter logic returns correct tasks, URL params update correctly",
         "Typecheck passes",
+        "Tests pass",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 4,
       "passes": false,
       "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Integration tests for Task Priority System",
+      "description": "As a developer, I want integration tests that verify all product requirements are met end-to-end.",
+      "acceptanceCriteria": [
+        "Integration test: User can create task, set priority, verify badge displays correctly",
+        "Integration test: Priority persists after page refresh",
+        "Integration test: Filter returns correct tasks for each priority option",
+        "Integration test: Complete flow - create task, edit priority, filter by priority, verify results",
+        "Integration test: Empty state displays when filter has no matches",
+        "All unit tests from previous stories pass",
+        "Integration tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "This story runs AFTER all feature stories complete. It validates the complete implementation."
     }
   ]
 }

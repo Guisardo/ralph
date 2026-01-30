@@ -88,6 +88,7 @@ Each criterion must be something Ralph can CHECK, not something vague.
 - "Filter dropdown has options: All, Active, Completed"
 - "Clicking delete shows confirmation dialog"
 - "Typecheck passes"
+- "Unit tests cover acceptance criteria"
 - "Tests pass"
 
 ### Bad criteria (vague):
@@ -96,19 +97,40 @@ Each criterion must be something Ralph can CHECK, not something vague.
 - "Good UX"
 - "Handles edge cases"
 
-### Always include as final criterion:
+### Required criteria for EVERY story (in order):
+
+1. **Typecheck passes** - Always include as final criterion
 ```
 "Typecheck passes"
 ```
 
-For stories with testable logic, also include:
+2. **Unit tests for acceptance criteria** - Add tests that verify the acceptance criteria
 ```
+"Unit tests written for: [list specific testable criteria]"
 "Tests pass"
 ```
 
-### For stories that change UI, also include:
+3. **For UI stories** - Visual verification required
 ```
 "Verify in browser using dev-browser skill"
+```
+
+### Unit Test Requirements
+
+Each story MUST include unit tests that verify its acceptance criteria. Tests should:
+- Cover the specific functionality described in acceptance criteria
+- Be placed in the appropriate test directory following project conventions
+- Use the project's existing test framework
+- Focus on the specific story's changes, not unrelated code
+
+**Example acceptance criteria with tests:**
+```json
+"acceptanceCriteria": [
+  "Add status column: 'pending' | 'in_progress' | 'done' (default 'pending')",
+  "Unit tests verify: status column exists, defaults to 'pending', accepts valid values",
+  "Typecheck passes",
+  "Tests pass"
+]
 ```
 
 Frontend stories are NOT complete until visually verified. Ralph will use the dev-browser skill to navigate to the page, interact with the UI, and confirm changes work.
@@ -123,6 +145,8 @@ Frontend stories are NOT complete until visually verified. Ralph will use the de
 4. **All stories**: `passes: false` and empty `notes`
 5. **branchName**: Derive from feature name, kebab-case, prefixed with `ralph/`
 6. **Always add**: "Typecheck passes" to every story's acceptance criteria
+7. **Always add**: Unit test criteria to every story with testable logic
+8. **Always add**: A final integration tests story (see below)
 
 ---
 
@@ -142,6 +166,69 @@ If a PRD has big features, split them:
 6. US-006: Add notification preferences page
 
 Each is one focused change that can be completed and verified independently.
+
+---
+
+## Final Integration Tests Story (Required)
+
+**EVERY prd.json MUST end with a final integration tests story.** This story:
+- Has the LOWEST priority (runs last, after all feature stories pass)
+- Creates integration/functional tests that verify ALL product requirements
+- Ensures the complete feature works end-to-end
+
+### Why This Matters
+
+Individual story tests verify isolated pieces. The integration tests story:
+1. Verifies all pieces work TOGETHER
+2. Tests the complete user flows from the original PRD
+3. Catches integration bugs that unit tests miss
+4. Provides confidence the product requirements are fully met
+
+### Integration Tests Story Template
+
+```json
+{
+  "id": "US-XXX",
+  "title": "Integration tests for [Feature Name]",
+  "description": "As a developer, I want integration tests that verify all product requirements are met end-to-end.",
+  "acceptanceCriteria": [
+    "Integration tests cover: [list all major user flows from PRD]",
+    "Tests verify complete user journey from [start] to [end]",
+    "Tests cover error scenarios and edge cases",
+    "All existing unit tests still pass",
+    "Integration tests pass",
+    "Typecheck passes"
+  ],
+  "priority": [LAST - highest number],
+  "passes": false,
+  "notes": "This story runs AFTER all feature stories complete. It validates the complete implementation."
+}
+```
+
+### What Integration Tests Should Cover
+
+Based on the original PRD requirements, the integration tests should:
+
+1. **End-to-end user flows** - Complete paths a user would take
+2. **Data persistence** - Data saves and retrieves correctly across operations
+3. **Component interaction** - Different parts of the feature work together
+4. **State management** - Application state remains consistent
+5. **Error handling** - Graceful handling of failures
+
+### Example Integration Tests Acceptance Criteria
+
+For a "Task Status Feature" PRD:
+```json
+"acceptanceCriteria": [
+  "Integration test: User can create task with status, change status, and filter by status",
+  "Integration test: Status persists after page refresh",
+  "Integration test: Filter returns correct tasks for each status option",
+  "Integration test: Status badge updates immediately when status changes",
+  "All unit tests from previous stories pass",
+  "Integration tests pass",
+  "Typecheck passes"
+]
+```
 
 ---
 
@@ -174,7 +261,9 @@ Add ability to mark tasks with different statuses.
       "acceptanceCriteria": [
         "Add status column: 'pending' | 'in_progress' | 'done' (default 'pending')",
         "Generate and run migration successfully",
-        "Typecheck passes"
+        "Unit tests verify: status column exists, defaults to 'pending', accepts only valid values",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 1,
       "passes": false,
@@ -187,7 +276,9 @@ Add ability to mark tasks with different statuses.
       "acceptanceCriteria": [
         "Each task card shows colored status badge",
         "Badge colors: gray=pending, blue=in_progress, green=done",
+        "Unit tests verify: StatusBadge component renders correct colors for each status",
         "Typecheck passes",
+        "Tests pass",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 2,
@@ -202,7 +293,9 @@ Add ability to mark tasks with different statuses.
         "Each row has status dropdown or toggle",
         "Changing status saves immediately",
         "UI updates without page refresh",
+        "Unit tests verify: status change handler calls update action, UI updates on success",
         "Typecheck passes",
+        "Tests pass",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 3,
@@ -216,12 +309,31 @@ Add ability to mark tasks with different statuses.
       "acceptanceCriteria": [
         "Filter dropdown: All | Pending | In Progress | Done",
         "Filter persists in URL params",
+        "Unit tests verify: filter logic returns correct tasks, URL params update correctly",
         "Typecheck passes",
+        "Tests pass",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 4,
       "passes": false,
       "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Integration tests for Task Status Feature",
+      "description": "As a developer, I want integration tests that verify all product requirements are met end-to-end.",
+      "acceptanceCriteria": [
+        "Integration test: User can create task, change status through all states, verify badge updates",
+        "Integration test: Status persists correctly after page refresh",
+        "Integration test: Filter returns correct tasks for each status option",
+        "Integration test: Complete flow - create task, set status, filter, verify results",
+        "All unit tests from previous stories pass",
+        "Integration tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "This story runs AFTER all feature stories complete. It validates the complete implementation."
     }
   ]
 }
@@ -250,8 +362,12 @@ Before writing prd.json, verify:
 
 - [ ] **Previous run archived** (if prd.json exists with different branchName, archive it first)
 - [ ] Each story is completable in one iteration (small enough)
-- [ ] Stories are ordered by dependency (schema to backend to UI)
+- [ ] Stories are ordered by dependency (schema → backend → UI → integration tests)
 - [ ] Every story has "Typecheck passes" as criterion
+- [ ] Every story with testable logic has "Unit tests verify: [specifics]" criterion
+- [ ] Every story has "Tests pass" as criterion
 - [ ] UI stories have "Verify in browser using dev-browser skill" as criterion
 - [ ] Acceptance criteria are verifiable (not vague)
 - [ ] No story depends on a later story
+- [ ] **Final integration tests story exists** with lowest priority
+- [ ] Integration tests cover all major user flows from original PRD
