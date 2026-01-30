@@ -42,12 +42,14 @@ Copy the skills to your Amp or Claude config for use across all projects:
 For AMP
 ```bash
 cp -r skills/prd ~/.config/amp/skills/
+cp -r skills/prd-reviewer ~/.config/amp/skills/
 cp -r skills/ralph ~/.config/amp/skills/
 ```
 
 For Claude Code
 ```bash
 cp -r skills/prd ~/.claude/skills/
+cp -r skills/prd-reviewer ~/.claude/skills/
 cp -r skills/ralph ~/.claude/skills/
 ```
 
@@ -75,7 +77,24 @@ Load the prd skill and create a PRD for [your feature description]
 
 Answer the clarifying questions. The skill saves output to `tasks/prd-[feature-name].md`.
 
-### 2. Convert PRD to Ralph format
+### 2. Review PRD (Recommended)
+
+Use the PRD Reviewer skill to validate your PRD before conversion:
+
+```
+/prd-reviewer tasks/prd-[feature-name].md
+```
+
+This skill:
+- Auto-fixes simple issues (required criteria, formatting)
+- Identifies story sizing problems
+- Validates dependency ordering
+- Checks acceptance criteria clarity
+- Generates detailed review report with actionable fixes
+
+Iterate until the PRD gets a high readiness score (8+/10). This prevents Ralph execution failures.
+
+### 3. Convert PRD to Ralph format
 
 Use the Ralph skill to convert the markdown PRD to JSON:
 
@@ -85,7 +104,7 @@ Load the ralph skill and convert tasks/prd-[feature-name].md to prd.json
 
 This creates `prd.json` with user stories structured for autonomous execution.
 
-### 3. Run Ralph
+### 4. Run Ralph
 
 ```bash
 # Using Amp (default)
@@ -152,6 +171,7 @@ When using the `/ralph` skill to convert a PRD to prd.json, it will guide you in
 | `prd.json.example` | Example PRD format for reference |
 | `progress.txt` | Append-only learnings for future iterations |
 | `skills/prd/` | Skill for generating PRDs |
+| `skills/prd-reviewer/` | Skill for reviewing PRDs (validates clarity, sizing, and Ralph readiness) |
 | `skills/ralph/` | Skill for converting PRDs to JSON |
 | `skills/sync-jira/` | Skill for pushing PRDs to Jira (creates epic and story tickets) |
 | `skills/cancel-jira/` | Skill for cancelling all Jira tickets when abandoning a PRD |
