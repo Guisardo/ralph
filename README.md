@@ -107,6 +107,40 @@ Ralph will:
 7. Append learnings to `progress.txt`
 8. Repeat until all stories pass or max iterations reached
 
+## Reasoning Levels
+
+Ralph supports per-story model selection via the `reasoningLevel` field in prd.json:
+
+### Model Mapping
+
+| Reasoning Level | Claude Model | Use Case |
+|----------------|--------------|----------|
+| `HIGH` | Opus 4.5 | Complex algorithms, architectural decisions, refactoring |
+| `MID` | Sonnet 4.5 | Standard features, CRUD operations, typical UI (default) |
+| `LOW` | Haiku 4.0 | Simple changes, config updates, trivial UI updates |
+
+### Setting Reasoning Levels
+
+When using the `/ralph` skill to convert a PRD to prd.json, it will guide you in choosing appropriate reasoning levels for each story. **The `reasoningLevel` field is REQUIRED for all user stories.**
+
+**Cost optimization tip:** Opus is ~15x more expensive than Haiku and ~3x more expensive than Sonnet. Use HIGH sparingly for genuinely complex work.
+
+### Example
+
+```json
+{
+  "id": "US-001",
+  "title": "Add status column to database",
+  "description": "As a developer, I need to store task status.",
+  "acceptanceCriteria": ["Add status enum column with default 'pending'"],
+  "priority": 1,
+  "passes": false,
+  "notes": "",
+  "jiraKey": null,
+  "reasoningLevel": "LOW"
+}
+```
+
 ## Key Files
 
 | File | Purpose |
