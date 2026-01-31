@@ -57,10 +57,10 @@ LAST_BRANCH_FILE="$SCRIPT_DIR/.last-branch"
 
 if [[ "$TOOL" == "amp" ]]; then
   # prompt.md with prd.json and progress.txt path substituted
-  sed -e "s|\`prd.json\`|\`$PRD_FILE\`|" -e "s|\`progress.txt\`|\`$PROGRESS_FILE\`|" "$SCRIPT_DIR/prompt.md" > prompt.md.tmp
+  sed -e "s|\`prd.json\`|\`$PRD_FILE\`|" -e "s|\`progress.txt\`|\`$PROGRESS_FILE\`|" "$SCRIPT_DIR/prompt.md" > "$PWD/ralph/prompt.md.tmp"
 else
   # claude prompt content with prd.json and progress.txt path substituted
-  sed -e "s|\`prd.json\`|\`$PRD_FILE\`|" -e "s|\`progress.txt\`|\`$PROGRESS_FILE\`|" "$SCRIPT_DIR/CLAUDE.md" > prompt.md.tmp
+  sed -e "s|\`prd.json\`|\`$PRD_FILE\`|" -e "s|\`progress.txt\`|\`$PROGRESS_FILE\`|" "$SCRIPT_DIR/CLAUDE.md" > "$PWD/ralph/prompt.md.tmp"
 fi
 
 # Archive previous run if branch changed
@@ -152,15 +152,15 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
   # Run the selected tool with the ralph prompt
   if [[ "$TOOL" == "amp" ]]; then
-    OUTPUT=$(cat "$SCRIPT_DIR/prompt.md.tmp" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr) || true
+    OUTPUT=$(cat "$PWD/ralph/prompt.md.tmp" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr) || true
   else
     if [[ "$INTERACTIVE" == true ]]; then
       # Claude Code: interactive mode - user approves tool usage, no --print for interactive UI
-      claude --model "$MODEL" < "$SCRIPT_DIR/prompt.md.tmp" || true
+      claude --model "$MODEL" < "$PWD/ralph/prompt.md.tmp" || true
       OUTPUT=""  # In interactive mode, we can't capture output easily
     else
       # Claude Code: autonomous mode - use --dangerously-skip-permissions and --print for output
-      OUTPUT=$(claude --model "$MODEL" --dangerously-skip-permissions --print < "$SCRIPT_DIR/prompt.md.tmp" 2>&1 | tee /dev/stderr) || true
+      OUTPUT=$(claude --model "$MODEL" --dangerously-skip-permissions --print < "$PWD/ralph/prompt.md.tmp" 2>&1 | tee /dev/stderr) || true
     fi
   fi
   
