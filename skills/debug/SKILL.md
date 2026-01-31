@@ -6946,6 +6946,785 @@ After web research completes:
 
 ---
 
+## Fix Application Workflow Template
+
+After research is complete and a strategy is identified, the next step is to apply a complete fix that addresses the root cause. This template guides systematic fix generation based on confirmed hypotheses and research findings.
+
+---
+
+### Overview
+
+The fix application workflow ensures fixes are:
+
+1. **Complete**: Addresses the entire root cause, not just symptoms
+2. **Research-Informed**: Uses best practices from official documentation and community solutions
+3. **Well-Documented**: Explains what the fix does, why it solves the issue, and the chosen approach
+4. **Source-Cited**: References research sources for auditability
+5. **Verifiable**: Preserves instrumentation for verification phase
+
+---
+
+### Step 1: Review Fix Context
+
+**When**: Session status is `research_complete`
+
+**Action**: Gather all context needed for fix generation
+
+**Context Collection Template:**
+
+```
+Fix Context Summary:
+
+CONFIRMED HYPOTHESIS:
+- ID: ${hypothesis.id}
+- Category: ${hypothesis.category}
+- Description: ${hypothesis.description}
+- Primary File: ${hypothesis.primaryFile}
+- All Files: ${hypothesis.allFiles}
+- Line Ranges: ${hypothesis.lineRanges}
+- Evidence: ${hypothesis.analysisResult.findings}
+
+ROOT CAUSE:
+${researchFindings.rootCauseAnalysis}
+
+RESEARCH FINDINGS:
+- Recommended Approach: ${researchFindings.recommendedStrategy.approach}
+- Primary Source: ${researchFindings.recommendedStrategy.primarySource}
+- Security Considerations: ${researchFindings.recommendedStrategy.securityConsiderations}
+- Deprecated Alternatives to Avoid: ${researchFindings.findings.filter(f => f.category === 'deprecated')}
+
+CURRENT STATE:
+- Instrumentation Present: Yes (preserve for verification)
+- Affected Files: ${instrumentation.files}
+- Session ID: ${session.sessionId}
+- Iteration: ${session.iterationCount}
+```
+
+**Fields Required:**
+- `hypothesis`: The confirmed hypothesis with evidence from log analysis
+- `researchFindings`: Research results including recommended approach and sources
+- `instrumentation`: Current instrumentation state (must be preserved)
+- `session`: Session metadata for commit messages
+
+---
+
+### Step 2: Validate Fix Completeness Requirements
+
+**When**: Before generating fix code
+
+**Action**: Verify the fix will address the complete root cause
+
+**Completeness Checklist:**
+
+| Requirement | Check | Status |
+|-------------|-------|--------|
+| Root cause identified | Hypothesis confirmed with evidence | ☐ |
+| All affected files known | `allFiles` array populated | ☐ |
+| Fix addresses all locations | Fix planned for all line ranges | ☐ |
+| Edge cases considered | Research findings reviewed | ☐ |
+| Security implications addressed | Security findings applied | ☐ |
+| Deprecated solutions avoided | No deprecated patterns used | ☐ |
+| Code style preserved | Match existing file conventions | ☐ |
+| Instrumentation preserved | DEBUG markers not removed | ☐ |
+
+**Completeness Validation Prompt:**
+
+```
+Before generating the fix, validate:
+
+1. SCOPE: Does the fix address ALL locations where the root cause manifests?
+   - Primary file: ${hypothesis.primaryFile} at lines ${hypothesis.lineRanges[hypothesis.primaryFile]}
+   - Related files: ${hypothesis.relatedFiles.map(f => f.path + ' at lines ' + hypothesis.lineRanges[f.path])}
+
+2. ROOT CAUSE: Does the fix address the actual root cause (not symptoms)?
+   - Root cause: ${researchFindings.rootCauseAnalysis}
+   - Fix mechanism: ${researchFindings.recommendedStrategy.mechanism}
+
+3. COMPLETENESS: Will the issue be fully resolved after this fix?
+   - Partial fixes are NOT acceptable
+   - If fix cannot be complete, document why and escalate
+
+4. EDGE CASES: Does the fix handle edge cases identified in research?
+   - Edge cases: ${researchFindings.findings.filter(f => f.category === 'edge_case')}
+
+5. SECURITY: Does the fix address any security implications?
+   - Security findings: ${researchFindings.findings.filter(f => f.category === 'security')}
+```
+
+**If completeness cannot be guaranteed:**
+- Do NOT proceed with partial fix
+- Document incompleteness reason
+- Consider generating additional hypotheses
+- Update session with `fixBlocked: true` and reason
+
+---
+
+### Step 3: Generate Fix Code
+
+**When**: Completeness requirements validated
+
+**Action**: Generate the complete fix code for all affected files
+
+**Fix Generation Template:**
+
+```json
+{
+  "fix": {
+    "fixId": "FIX_${hypothesis.id}_${Date.now()}",
+    "basedOnHypothesis": "${hypothesis.id}",
+    "researchSource": "${researchFindings.recommendedStrategy.primarySource}",
+    "approach": "${researchFindings.recommendedStrategy.approach}",
+    "files": [
+      {
+        "file": "${file.path}",
+        "changes": [
+          {
+            "type": "replace|insert|delete|wrap",
+            "startLine": 45,
+            "endLine": 52,
+            "originalCode": "// original code here",
+            "newCode": "// fixed code here",
+            "explanation": "Why this change fixes the issue"
+          }
+        ],
+        "preserveInstrumentation": true,
+        "instrumentationMarkers": ["DEBUG_HYP_1_START", "DEBUG_HYP_1_END"]
+      }
+    ],
+    "fixExplanation": {
+      "whatItDoes": "Description of what the fix changes",
+      "whyItSolves": "Explanation of why this addresses the root cause",
+      "approachChosen": "Which recommended approach was selected and why",
+      "alternativesConsidered": "Other approaches considered but not chosen",
+      "sourceReference": "Citation to research source used"
+    }
+  }
+}
+```
+
+**Change Types:**
+
+| Type | Description | Use When |
+|------|-------------|----------|
+| `replace` | Replace existing code with new code | Fixing logic errors, changing implementations |
+| `insert` | Add new code at location | Adding null checks, validation, error handling |
+| `delete` | Remove code | Removing problematic code causing the issue |
+| `wrap` | Wrap existing code with new code | Adding try-catch, conditionals around existing logic |
+
+---
+
+### Step 4: Prioritize Research Best Practices
+
+**When**: Generating fix code
+
+**Action**: Ensure fix follows researched best practices, not naive solutions
+
+**Best Practice Prioritization:**
+
+```
+Fix Approach Selection:
+
+1. CHECK OFFICIAL DOCUMENTATION FIRST
+   - If official docs provide specific guidance, follow it
+   - Source: ${researchFindings.findings.filter(f => f.sourceType === 'official_documentation')[0]}
+
+2. CHECK SECURITY RECOMMENDATIONS
+   - Apply any security-related fixes from research
+   - Security findings: ${researchFindings.findings.filter(f => f.category === 'security')}
+   - Never introduce new security vulnerabilities
+
+3. CHECK COMMUNITY CONSENSUS
+   - If multiple sources recommend same approach, prefer it
+   - Consensus approach: ${researchFindings.recommendedStrategy.approach}
+
+4. AVOID DEPRECATED SOLUTIONS
+   - Do NOT use any approach marked as deprecated
+   - Deprecated: ${researchFindings.findings.filter(f => f.category === 'deprecated')}
+
+5. PREFER SIMPLE OVER CLEVER
+   - If multiple valid approaches exist, choose the simpler one
+   - Complexity introduces bugs
+```
+
+**Best Practice Validation:**
+
+```json
+{
+  "bestPracticeValidation": {
+    "followsOfficialDocs": true,
+    "officialDocSource": "https://docs.example.com/error-handling",
+    "addressesSecurityConcerns": true,
+    "securityMeasures": ["Input validation added", "Error messages sanitized"],
+    "avoidsDeprecated": true,
+    "deprecatedAvoided": ["Direct string interpolation", "synchronous file reads"],
+    "approachJustification": "Followed official async/await pattern per docs"
+  }
+}
+```
+
+---
+
+### Step 5: Preserve Instrumentation
+
+**When**: Generating fix code
+
+**Action**: Ensure all instrumentation markers remain intact for verification
+
+**Instrumentation Preservation Rules:**
+
+1. **Do NOT delete** any lines containing `DEBUG_HYP_N_START` or `DEBUG_HYP_N_END`
+2. **Do NOT modify** instrumentation log statements
+3. **Work around** instrumentation when making changes
+4. **Document** which markers are present in each fixed file
+
+**Instrumentation Preservation Template:**
+
+```typescript
+// BEFORE FIX (with instrumentation)
+async function findUser(userId: string): Promise<User | null> {
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] findUser called with userId:', userId);
+    // DEBUG_HYP_1_END
+
+    const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] db.query returned:', user);
+    // DEBUG_HYP_1_END
+
+    return user;
+}
+
+// AFTER FIX (instrumentation preserved)
+async function findUser(userId: string): Promise<User | null> {
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] findUser called with userId:', userId);
+    // DEBUG_HYP_1_END
+
+    // FIX: Added null check for userId before query
+    if (!userId) {
+        // DEBUG_HYP_1_START
+        console.log('[DEBUG_HYP_1] userId is null/undefined, returning null');
+        // DEBUG_HYP_1_END
+        return null;
+    }
+
+    const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] db.query returned:', user);
+    // DEBUG_HYP_1_END
+
+    return user;
+}
+```
+
+**Key Points:**
+- Existing instrumentation remains unchanged
+- New instrumentation may be added for fix verification
+- Fix code is inserted around instrumentation blocks
+- Markers are preserved for cleanup phase after verification
+
+---
+
+### Step 6: Generate Fix Explanation
+
+**When**: After fix code is generated
+
+**Action**: Generate comprehensive explanation for user and documentation
+
+**Fix Explanation Template:**
+
+```markdown
+## Fix Applied: ${fix.fixId}
+
+### What This Fix Does
+${fix.fixExplanation.whatItDoes}
+
+Specifically:
+- Change 1: ${files[0].changes[0].explanation}
+- Change 2: ${files[0].changes[1].explanation}
+- ... (for each change)
+
+### Why This Solves the Issue
+${fix.fixExplanation.whyItSolves}
+
+**Root Cause:** ${hypothesis.description}
+**Evidence:** ${hypothesis.analysisResult.findings}
+**Fix Mechanism:** This fix addresses the root cause by ${fix.fixExplanation.approachChosen}
+
+### Approach Chosen
+${fix.fixExplanation.approachChosen}
+
+**Alternatives Considered:**
+${fix.fixExplanation.alternativesConsidered.map(alt => '- ' + alt.name + ': ' + alt.whyNotChosen)}
+
+**Why This Approach:**
+- Recommended by: ${researchFindings.recommendedStrategy.primarySource}
+- Relevance score: ${researchFindings.recommendedStrategy.relevanceScore}
+- Security: ${bestPracticeValidation.securityMeasures}
+
+### Source References
+${fix.fixExplanation.sourceReference}
+
+**Primary Source:**
+- URL: ${researchFindings.recommendedStrategy.primarySource.url}
+- Type: ${researchFindings.recommendedStrategy.primarySource.type}
+- Accessed: ${researchFindings.recommendedStrategy.primarySource.accessedAt}
+
+**Supporting Sources:**
+${researchFindings.sourcesConsulted.map(s => '- ' + s.url + ' (' + s.type + ')')}
+
+### Files Changed
+${fix.files.map(f => '- ' + f.file + ': ' + f.changes.length + ' changes')}
+
+### Instrumentation Status
+- Instrumentation preserved: Yes
+- Markers present: ${fix.files.flatMap(f => f.instrumentationMarkers)}
+- Ready for verification: Yes
+```
+
+---
+
+### Step 7: Apply Fix to Files
+
+**When**: Fix code and explanation generated
+
+**Action**: Apply the fix changes to all affected files
+
+**Fix Application Process:**
+
+```bash
+# For each file in fix.files:
+# 1. Read current file content
+# 2. Apply changes in reverse line order (to preserve line numbers)
+# 3. Validate instrumentation preserved
+# 4. Write updated content
+# 5. Stage file for commit
+```
+
+**Application Order (Important):**
+
+1. **Apply changes in reverse line order** to preserve line numbers during multi-change files
+2. **Validate after each file** that instrumentation markers are still present
+3. **Stage all files** before committing
+
+**Fix Application Schema:**
+
+```json
+{
+  "fixApplication": {
+    "timestamp": "2026-01-31T10:00:00Z",
+    "fixId": "FIX_HYP_1_1706691600000",
+    "filesModified": [
+      {
+        "file": "src/services/UserService.ts",
+        "changesApplied": 2,
+        "linesModified": 15,
+        "instrumentationPreserved": true,
+        "markersVerified": ["DEBUG_HYP_1_START", "DEBUG_HYP_1_END"]
+      }
+    ],
+    "totalLinesModified": 15,
+    "applicationStatus": "success"
+  }
+}
+```
+
+---
+
+### Step 8: Update Session and Commit Fix
+
+**When**: All fix changes applied successfully
+
+**Action**: Update session state and create fix commit
+
+**Session Update:**
+
+```json
+{
+  "status": "fix_applied",
+  "currentFix": {
+    "fixId": "FIX_HYP_1_1706691600000",
+    "appliedAt": "2026-01-31T10:00:00Z",
+    "hypothesis": "HYP_1",
+    "approach": "Added null check per official documentation recommendation",
+    "filesModified": ["src/services/UserService.ts"],
+    "instrumentationPreserved": true,
+    "commitSha": null
+  },
+  "fixesAttempted": [
+    {
+      "fixId": "FIX_HYP_1_1706691600000",
+      "iteration": 1,
+      "hypothesis": "HYP_1",
+      "approach": "Null check addition",
+      "status": "applied",
+      "verificationPending": true
+    }
+  ]
+}
+```
+
+**Commit Message Template:**
+
+```bash
+git add ${fix.files.map(f => f.file).join(' ')}
+git commit -m "debug: Apply fix for ${hypothesis.id}
+
+Session: ${session.sessionId}
+Iteration: ${session.iterationCount}
+Hypothesis: ${hypothesis.id} - ${hypothesis.description}
+Fix: ${fix.fixExplanation.whatItDoes}
+
+Approach: ${fix.approach}
+Source: ${researchFindings.recommendedStrategy.primarySource.url}
+
+Files modified:
+${fix.files.map(f => '- ' + f.file + ': ' + f.changes.map(c => c.explanation).join(', ')).join('\n')}
+
+Note: Instrumentation preserved for verification phase.
+"
+```
+
+**Commit Message Structure:**
+- **Type**: `debug:` prefix for debug skill commits
+- **Summary**: Brief description of the fix
+- **Session Info**: Session ID and iteration for traceability
+- **Hypothesis**: Which hypothesis this fix addresses
+- **Approach**: What approach was taken (for audit)
+- **Source**: Research source reference
+- **Files**: List of files and changes
+- **Note**: Confirmation that instrumentation is preserved
+
+**Update Session with Commit SHA:**
+
+```json
+{
+  "currentFix": {
+    "commitSha": "abc123def456",
+    "committed": true,
+    "committedAt": "2026-01-31T10:01:00Z"
+  }
+}
+```
+
+---
+
+### Fix Application Examples
+
+#### Example 1: Null Reference Fix (TypeScript)
+
+**Confirmed Hypothesis:** User object is null when accessed at line 45 of UserService.ts
+
+**Research Finding:** Official TypeScript documentation recommends optional chaining and null guards
+
+**Original Code (with instrumentation):**
+```typescript
+async function sendEmail(userId: string): Promise<void> {
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] sendEmail called with userId:', userId);
+    // DEBUG_HYP_1_END
+
+    const user = await userRepository.findById(userId);
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] user result:', user);
+    // DEBUG_HYP_1_END
+
+    // BUG: user can be null here
+    await emailService.send(user.email, 'Hello!');
+}
+```
+
+**Fixed Code (instrumentation preserved):**
+```typescript
+async function sendEmail(userId: string): Promise<void> {
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] sendEmail called with userId:', userId);
+    // DEBUG_HYP_1_END
+
+    const user = await userRepository.findById(userId);
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] user result:', user);
+    // DEBUG_HYP_1_END
+
+    // FIX: Add null guard per TypeScript best practices
+    // Source: https://www.typescriptlang.org/docs/handbook/2/narrowing.html
+    if (!user) {
+        // DEBUG_HYP_1_START
+        console.log('[DEBUG_HYP_1] user not found, throwing error');
+        // DEBUG_HYP_1_END
+        throw new UserNotFoundError(`User ${userId} not found`);
+    }
+
+    await emailService.send(user.email, 'Hello!');
+}
+```
+
+**Fix Explanation:**
+```json
+{
+  "fixExplanation": {
+    "whatItDoes": "Adds a null guard check before accessing user.email, throwing a descriptive error if user is not found",
+    "whyItSolves": "The root cause was accessing user.email when user is null. The null guard prevents the null reference by explicitly handling the null case before property access.",
+    "approachChosen": "Explicit null check with early return pattern - recommended by TypeScript documentation for narrowing types",
+    "alternativesConsidered": [
+      {"name": "Optional chaining (user?.email)", "whyNotChosen": "Would silently pass null/undefined to emailService, not addressing the root issue"},
+      {"name": "Default value (user?.email ?? 'default')", "whyNotChosen": "Inappropriate - no default email makes sense, should fail explicitly"}
+    ],
+    "sourceReference": "TypeScript Handbook: Narrowing (https://www.typescriptlang.org/docs/handbook/2/narrowing.html)"
+  }
+}
+```
+
+#### Example 2: Race Condition Fix (Python)
+
+**Confirmed Hypothesis:** Cache invalidation races with read, causing stale data
+
+**Research Finding:** Python asyncio documentation recommends locks for shared state access
+
+**Original Code (with instrumentation):**
+```python
+class CacheService:
+    def __init__(self):
+        self.cache = {}
+
+    async def get_user(self, user_id: str) -> Optional[User]:
+        # DEBUG_HYP_2_START
+        print(f'[DEBUG_HYP_2] get_user called with user_id: {user_id}')
+        # DEBUG_HYP_2_END
+
+        # BUG: No synchronization, race with invalidate_user
+        if user_id in self.cache:
+            return self.cache[user_id]
+
+        user = await self.db.find_user(user_id)
+        if user:
+            self.cache[user_id] = user
+        return user
+
+    async def invalidate_user(self, user_id: str) -> None:
+        # DEBUG_HYP_2_START
+        print(f'[DEBUG_HYP_2] invalidate_user called with user_id: {user_id}')
+        # DEBUG_HYP_2_END
+
+        if user_id in self.cache:
+            del self.cache[user_id]
+```
+
+**Fixed Code (instrumentation preserved):**
+```python
+import asyncio
+
+class CacheService:
+    def __init__(self):
+        self.cache = {}
+        # FIX: Add lock for cache access synchronization
+        # Source: https://docs.python.org/3/library/asyncio-sync.html
+        self._cache_lock = asyncio.Lock()
+
+    async def get_user(self, user_id: str) -> Optional[User]:
+        # DEBUG_HYP_2_START
+        print(f'[DEBUG_HYP_2] get_user called with user_id: {user_id}')
+        # DEBUG_HYP_2_END
+
+        # FIX: Use lock to prevent race condition with invalidation
+        async with self._cache_lock:
+            if user_id in self.cache:
+                # DEBUG_HYP_2_START
+                print(f'[DEBUG_HYP_2] cache hit for user_id: {user_id}')
+                # DEBUG_HYP_2_END
+                return self.cache[user_id]
+
+        # FIX: DB query outside lock to prevent blocking
+        user = await self.db.find_user(user_id)
+
+        async with self._cache_lock:
+            if user:
+                # FIX: Re-check cache in case of concurrent populate
+                if user_id not in self.cache:
+                    self.cache[user_id] = user
+        return user
+
+    async def invalidate_user(self, user_id: str) -> None:
+        # DEBUG_HYP_2_START
+        print(f'[DEBUG_HYP_2] invalidate_user called with user_id: {user_id}')
+        # DEBUG_HYP_2_END
+
+        # FIX: Use lock for atomic cache modification
+        async with self._cache_lock:
+            if user_id in self.cache:
+                del self.cache[user_id]
+                # DEBUG_HYP_2_START
+                print(f'[DEBUG_HYP_2] user {user_id} invalidated from cache')
+                # DEBUG_HYP_2_END
+```
+
+**Fix Explanation:**
+```json
+{
+  "fixExplanation": {
+    "whatItDoes": "Adds asyncio.Lock to synchronize all cache access operations, preventing race conditions between get_user and invalidate_user",
+    "whyItSolves": "The root cause was concurrent access to shared cache state without synchronization. The asyncio.Lock ensures only one coroutine can modify the cache at a time, eliminating the race condition.",
+    "approachChosen": "asyncio.Lock with double-check pattern - recommended by Python asyncio documentation for shared state protection",
+    "alternativesConsidered": [
+      {"name": "threading.Lock", "whyNotChosen": "Not compatible with async/await, would block the event loop"},
+      {"name": "Queue-based cache", "whyNotChosen": "Over-engineering for this use case, Lock is simpler and sufficient"}
+    ],
+    "sourceReference": "Python asyncio Synchronization Primitives (https://docs.python.org/3/library/asyncio-sync.html)"
+  }
+}
+```
+
+#### Example 3: Timeout Fix (Go)
+
+**Confirmed Hypothesis:** External API call timeout is too short for large payloads
+
+**Research Finding:** Go context documentation recommends configurable timeouts with context.WithTimeout
+
+**Original Code (with instrumentation):**
+```go
+func (s *PaymentService) ProcessPayment(ctx context.Context, order Order) (*PaymentResult, error) {
+    // DEBUG_HYP_3_START
+    fmt.Printf("[DEBUG_HYP_3] ProcessPayment called, order.ID: %s\n", order.ID)
+    // DEBUG_HYP_3_END
+
+    // BUG: Uses parent context timeout, insufficient for large orders
+    payload := s.buildPayload(order)
+
+    // DEBUG_HYP_3_START
+    fmt.Printf("[DEBUG_HYP_3] payload size: %d bytes\n", len(payload))
+    // DEBUG_HYP_3_END
+
+    resp, err := s.client.Post(ctx, "/payments", payload)
+    if err != nil {
+        return nil, fmt.Errorf("payment failed: %w", err)
+    }
+    return s.parseResponse(resp)
+}
+```
+
+**Fixed Code (instrumentation preserved):**
+```go
+import (
+    "context"
+    "time"
+)
+
+// FIX: Add timeout configuration based on payload size
+// Source: https://pkg.go.dev/context#WithTimeout
+const (
+    baseTimeout      = 10 * time.Second
+    perMBTimeout     = 5 * time.Second
+    maxPaymentTimeout = 60 * time.Second
+)
+
+func (s *PaymentService) ProcessPayment(ctx context.Context, order Order) (*PaymentResult, error) {
+    // DEBUG_HYP_3_START
+    fmt.Printf("[DEBUG_HYP_3] ProcessPayment called, order.ID: %s\n", order.ID)
+    // DEBUG_HYP_3_END
+
+    payload := s.buildPayload(order)
+
+    // DEBUG_HYP_3_START
+    fmt.Printf("[DEBUG_HYP_3] payload size: %d bytes\n", len(payload))
+    // DEBUG_HYP_3_END
+
+    // FIX: Calculate dynamic timeout based on payload size
+    payloadMB := float64(len(payload)) / (1024 * 1024)
+    timeout := baseTimeout + time.Duration(payloadMB*float64(perMBTimeout))
+    if timeout > maxPaymentTimeout {
+        timeout = maxPaymentTimeout
+    }
+
+    // DEBUG_HYP_3_START
+    fmt.Printf("[DEBUG_HYP_3] calculated timeout: %v\n", timeout)
+    // DEBUG_HYP_3_END
+
+    // FIX: Create dedicated context with appropriate timeout
+    paymentCtx, cancel := context.WithTimeout(ctx, timeout)
+    defer cancel()
+
+    resp, err := s.client.Post(paymentCtx, "/payments", payload)
+    if err != nil {
+        // DEBUG_HYP_3_START
+        if paymentCtx.Err() == context.DeadlineExceeded {
+            fmt.Printf("[DEBUG_HYP_3] timeout exceeded: %v\n", timeout)
+        }
+        // DEBUG_HYP_3_END
+        return nil, fmt.Errorf("payment failed: %w", err)
+    }
+    return s.parseResponse(resp)
+}
+```
+
+**Fix Explanation:**
+```json
+{
+  "fixExplanation": {
+    "whatItDoes": "Implements dynamic timeout calculation based on payload size, creating a dedicated context with appropriate timeout for each payment request",
+    "whyItSolves": "The root cause was using a fixed timeout from the parent context that was insufficient for large payloads. The dynamic timeout scales with payload size, ensuring adequate time for transmission while still preventing indefinite hangs.",
+    "approachChosen": "Dynamic timeout with context.WithTimeout - recommended by Go context package documentation for time-bounded operations",
+    "alternativesConsidered": [
+      {"name": "Fixed longer timeout", "whyNotChosen": "Would unnecessarily delay failure detection for small payloads"},
+      {"name": "No timeout (context.Background)", "whyNotChosen": "Could hang indefinitely on network issues, unacceptable for payment processing"}
+    ],
+    "sourceReference": "Go context package (https://pkg.go.dev/context#WithTimeout)"
+  }
+}
+```
+
+---
+
+### Fix Application Rules
+
+1. **Complete fixes only**: Never apply partial fixes that address symptoms instead of root cause
+2. **Research-informed**: Always prioritize official documentation and best practices over naive solutions
+3. **Preserve instrumentation**: Do NOT remove or modify any DEBUG markers during fix application
+4. **Document everything**: Every fix must include what, why, and source reference
+5. **Single hypothesis per fix**: Each fix should address one confirmed hypothesis
+6. **Style preservation**: Match existing code style (indentation, quotes, braces) in fixed code
+7. **Security first**: Apply security recommendations from research; never introduce vulnerabilities
+8. **Avoid deprecated**: Do NOT use any deprecated solutions identified in research
+9. **Commit atomically**: One commit per fix attempt with descriptive message
+10. **Track all attempts**: Store each fix attempt in `fixesAttempted` array for rollback and audit
+
+---
+
+### Session Status Transitions
+
+**Entering Fix Application:**
+- Required status: `research_complete`
+- Required fields: `confirmedHypothesis`, `researchFindings.recommendedStrategy`
+
+**After Fix Applied:**
+- New status: `fix_applied`
+- New fields: `currentFix` with fixId, approach, filesModified, commitSha
+
+**Next Phase Routing:**
+- **Fix applied successfully** → Proceed to Fix Verification Phase
+- **Fix blocked** (cannot achieve completeness) → Return to Hypothesis Generation with context
+
+---
+
+### Proceeding to Next Phase
+
+After fix is applied and committed:
+
+1. **Session updated** with `currentFix` object and status `fix_applied`
+2. **Commit created** with descriptive message and source references
+3. **Instrumentation preserved** in all modified files
+4. **Fix explanation documented** for user understanding
+
+**Proceed to:**
+- **Fix Verification Phase** to verify the fix resolves the issue
+- Re-run reproduction to compare new logs with original issue logs
+- If verification fails, rollback fix (keep instrumentation) and return to hypothesis generation
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
