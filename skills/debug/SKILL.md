@@ -1297,6 +1297,815 @@ Then proceed to the Multi-File Tracking phase to expand hypothesis coverage acro
 
 ---
 
+## Multi-File Hypothesis Tracking Workflow Template
+
+This template defines how to expand hypothesis coverage across related files by analyzing dependencies, imports, and cross-boundary interactions. The goal is to ensure each hypothesis tracks ALL files that could be involved in the issue, enabling comprehensive instrumentation and log correlation.
+
+### Multi-File Tracking Overview
+
+```
+1. Analyze Initial Files → Extract imports, exports, and dependencies from hypothesis files
+2. Identify Related Files → Find files in the call chain, data flow, and shared state
+3. Categorize by Layer → Map files to frontend, backend, database, and shared layers
+4. Expand Hypothesis → Add all related files with specific line ranges
+5. Track Correlation → Define log markers for cross-file correlation
+```
+
+### Step 1: Analyze Initial Hypothesis Files
+
+**When**: After hypothesis generation is complete (status = "hypothesis_generated")
+
+**Input**: Each hypothesis has initial `files` and `lineRanges` from generation phase
+
+**Action**: For each file in the hypothesis, extract dependency information
+
+#### Import/Require Analysis Patterns
+
+**JavaScript/TypeScript**:
+```javascript
+// Pattern: ES6 imports
+import { UserService } from '../services/user';
+import * as db from './database';
+import type { User } from '../types/user';
+
+// Pattern: CommonJS requires
+const { validateEmail } = require('../validators/email');
+const config = require('../../config');
+
+// Pattern: Dynamic imports
+const module = await import('./dynamic-module');
+```
+
+**Python**:
+```python
+# Pattern: Standard imports
+from services.user import UserService
+from database import db, query_builder
+import validators.email as email_validator
+
+# Pattern: Relative imports
+from . import utils
+from ..shared import constants
+```
+
+**Go**:
+```go
+// Pattern: Package imports
+import (
+    "myapp/services/user"
+    "myapp/database"
+    "myapp/validators"
+)
+```
+
+**Java/Kotlin**:
+```java
+// Pattern: Package imports
+import com.myapp.services.UserService;
+import com.myapp.database.Repository;
+import static com.myapp.utils.Validators.*;
+```
+
+**Template for extracting dependencies from a file**:
+
+```
+Given file: <file_path>
+
+1. Extract all import/require statements
+2. Resolve relative paths to absolute project paths
+3. Identify:
+   - Direct dependencies (explicitly imported)
+   - Type dependencies (interface/type imports)
+   - Side-effect imports (import for initialization)
+4. For each dependency, note:
+   - What is imported (specific exports vs entire module)
+   - How it's used in the hypothesis line range
+```
+
+### Step 2: Identify Related Files by Category
+
+**File Relationship Categories**:
+
+#### 2.1 Call Chain Files (Direct Dependencies)
+
+Files that are directly called from the hypothesis location:
+
+```
+Example: Error at src/controllers/user.ts:45
+
+Call chain analysis:
+- user.ts imports UserService from src/services/user.ts
+- Line 45 calls userService.findById()
+- findById() calls database.query() at src/database/queries.ts
+
+Call chain files:
+1. src/controllers/user.ts (origin)
+2. src/services/user.ts (direct call)
+3. src/database/queries.ts (transitive call)
+```
+
+**Template**:
+```json
+{
+  "callChain": {
+    "origin": "src/controllers/user.ts:45",
+    "directCalls": [
+      {
+        "file": "src/services/user.ts",
+        "function": "findById",
+        "lineRange": "30-50"
+      }
+    ],
+    "transitiveCalls": [
+      {
+        "file": "src/database/queries.ts",
+        "function": "query",
+        "lineRange": "15-25",
+        "calledFrom": "src/services/user.ts:42"
+      }
+    ]
+  }
+}
+```
+
+#### 2.2 Data Flow Files
+
+Files involved in data transformation between layers:
+
+```
+Example: User input validation error
+
+Data flow analysis:
+- Request enters at src/routes/user.ts (route handler)
+- Data validated by src/validators/user.ts (validation layer)
+- Transformed by src/transformers/user.ts (DTO transformation)
+- Stored via src/repositories/user.ts (database layer)
+
+Data flow files:
+1. src/routes/user.ts (entry point)
+2. src/validators/user.ts (validation)
+3. src/transformers/user.ts (transformation)
+4. src/repositories/user.ts (persistence)
+```
+
+**Template**:
+```json
+{
+  "dataFlow": {
+    "entryPoint": "src/routes/user.ts:20",
+    "stages": [
+      {
+        "stage": "validation",
+        "file": "src/validators/user.ts",
+        "lineRange": "10-35",
+        "dataIn": "rawUserInput",
+        "dataOut": "validatedUser"
+      },
+      {
+        "stage": "transformation",
+        "file": "src/transformers/user.ts",
+        "lineRange": "15-40",
+        "dataIn": "validatedUser",
+        "dataOut": "userDTO"
+      },
+      {
+        "stage": "persistence",
+        "file": "src/repositories/user.ts",
+        "lineRange": "50-80",
+        "dataIn": "userDTO",
+        "dataOut": "savedUser"
+      }
+    ]
+  }
+}
+```
+
+#### 2.3 Shared State Files
+
+Files that share state (global variables, singletons, caches):
+
+```
+Example: Race condition in cache access
+
+Shared state analysis:
+- Cache defined in src/cache/manager.ts (singleton)
+- Accessed by src/services/user.ts (service layer)
+- Also accessed by src/services/preferences.ts (different service)
+- Initialized in src/server/startup.ts (initialization)
+
+Shared state files:
+1. src/cache/manager.ts (state owner)
+2. src/services/user.ts (accessor 1)
+3. src/services/preferences.ts (accessor 2)
+4. src/server/startup.ts (initializer)
+```
+
+**Template**:
+```json
+{
+  "sharedState": {
+    "stateOwner": {
+      "file": "src/cache/manager.ts",
+      "stateVariable": "cacheInstance",
+      "lineRange": "5-30"
+    },
+    "initializer": {
+      "file": "src/server/startup.ts",
+      "lineRange": "45-60"
+    },
+    "accessors": [
+      {
+        "file": "src/services/user.ts",
+        "accessType": "read/write",
+        "lineRange": "70-85"
+      },
+      {
+        "file": "src/services/preferences.ts",
+        "accessType": "read",
+        "lineRange": "40-55"
+      }
+    ]
+  }
+}
+```
+
+#### 2.4 Configuration Files
+
+Files that provide configuration affecting behavior:
+
+```
+Configuration files:
+1. src/config/database.ts (database settings)
+2. src/config/api.ts (API timeouts, endpoints)
+3. .env / environment variables
+4. package.json (dependency versions)
+```
+
+**Template**:
+```json
+{
+  "configuration": {
+    "files": [
+      {
+        "file": "src/config/database.ts",
+        "relevantSettings": ["connectionTimeout", "poolSize"],
+        "lineRange": "10-30"
+      },
+      {
+        "file": "src/config/api.ts",
+        "relevantSettings": ["requestTimeout", "baseUrl"],
+        "lineRange": "5-20"
+      }
+    ]
+  }
+}
+```
+
+### Step 3: Categorize Files by Project Layer
+
+**Template for layer categorization**:
+
+```json
+{
+  "layers": {
+    "frontend": {
+      "patterns": ["src/pages/**", "src/components/**", "src/hooks/**", "app/**/*.tsx"],
+      "files": [
+        {
+          "path": "src/pages/upload.tsx",
+          "role": "Page component",
+          "hypothesisRelevance": "User interaction entry point"
+        }
+      ]
+    },
+    "backend": {
+      "patterns": ["src/controllers/**", "src/services/**", "src/routes/**", "api/**"],
+      "files": [
+        {
+          "path": "src/controllers/user.ts",
+          "role": "Request handler",
+          "hypothesisRelevance": "Error origin from stack trace"
+        },
+        {
+          "path": "src/services/user.ts",
+          "role": "Business logic",
+          "hypothesisRelevance": "Called from controller at error point"
+        }
+      ]
+    },
+    "database": {
+      "patterns": ["src/database/**", "src/repositories/**", "src/models/**", "prisma/**"],
+      "files": [
+        {
+          "path": "src/repositories/user.ts",
+          "role": "Data access",
+          "hypothesisRelevance": "Database query returning null"
+        }
+      ]
+    },
+    "shared": {
+      "patterns": ["src/utils/**", "src/types/**", "src/constants/**", "lib/**"],
+      "files": [
+        {
+          "path": "src/types/user.ts",
+          "role": "Type definitions",
+          "hypothesisRelevance": "Type may not handle null case"
+        }
+      ]
+    },
+    "infrastructure": {
+      "patterns": ["src/config/**", "src/middleware/**", "src/server/**"],
+      "files": [
+        {
+          "path": "src/middleware/validation.ts",
+          "role": "Request validation",
+          "hypothesisRelevance": "May be skipping validation"
+        }
+      ]
+    }
+  }
+}
+```
+
+### Step 4: Expand Hypothesis with Related Files
+
+**When**: After dependency analysis is complete for all hypothesis files
+
+**Action**: Update each hypothesis to include all related files with specific line ranges
+
+**Expanded Hypothesis Format**:
+
+```json
+{
+  "id": "HYP_1",
+  "category": "null_reference",
+  "description": "User object is null after database lookup in findById",
+  "rationale": "Stack trace shows null access at controller level, traced to database query",
+
+  "primaryFile": {
+    "path": "src/controllers/user.ts",
+    "lineRange": "40-55",
+    "role": "Error origin"
+  },
+
+  "relatedFiles": [
+    {
+      "path": "src/services/user.ts",
+      "lineRange": "30-50",
+      "role": "Direct call chain",
+      "relationship": "Called from controller at line 45",
+      "variablesToInspect": ["userId", "userRecord"]
+    },
+    {
+      "path": "src/repositories/user.ts",
+      "lineRange": "60-80",
+      "role": "Database access",
+      "relationship": "Called from service at line 42",
+      "variablesToInspect": ["query", "result", "rowCount"]
+    },
+    {
+      "path": "src/database/connection.ts",
+      "lineRange": "20-40",
+      "role": "Connection management",
+      "relationship": "Provides connection to repository",
+      "variablesToInspect": ["connection", "isConnected"]
+    }
+  ],
+
+  "allFiles": [
+    "src/controllers/user.ts",
+    "src/services/user.ts",
+    "src/repositories/user.ts",
+    "src/database/connection.ts"
+  ],
+
+  "lineRanges": {
+    "src/controllers/user.ts": "40-55",
+    "src/services/user.ts": "30-50",
+    "src/repositories/user.ts": "60-80",
+    "src/database/connection.ts": "20-40"
+  },
+
+  "crossFileCorrelation": {
+    "traceId": "HYP_1_TRACE",
+    "entryPoint": "src/controllers/user.ts:45",
+    "exitPoint": "src/repositories/user.ts:75",
+    "dataVariables": ["userId", "userRecord", "query", "result"]
+  },
+
+  "confidence": 0.85,
+  "status": "pending",
+  "generatedAt": "2025-01-31T10:32:00Z",
+  "expandedAt": "2025-01-31T10:33:00Z"
+}
+```
+
+### Step 5: Define Cross-File Log Correlation
+
+**Purpose**: Enable correlation of log entries across multiple files to trace data flow and timing
+
+**Correlation Strategy**:
+
+#### 5.1 Trace ID Propagation
+
+Each hypothesis gets a unique trace ID that flows through all instrumented files:
+
+```javascript
+// src/controllers/user.ts
+// DEBUG_HYP_1_START
+const HYP_1_TRACE_ID = `HYP_1_${Date.now()}`;
+console.log(`[HYP_1_TRACE:${HYP_1_TRACE_ID}] Controller: userId=${userId}`);
+// Pass trace ID to service
+const result = await userService.findById(userId, { traceId: HYP_1_TRACE_ID });
+// DEBUG_HYP_1_END
+
+// src/services/user.ts
+// DEBUG_HYP_1_START
+console.log(`[HYP_1_TRACE:${traceId}] Service: Looking up user ${userId}`);
+const user = await repository.findById(userId, traceId);
+console.log(`[HYP_1_TRACE:${traceId}] Service: Result=${JSON.stringify(user)}`);
+// DEBUG_HYP_1_END
+
+// src/repositories/user.ts
+// DEBUG_HYP_1_START
+console.log(`[HYP_1_TRACE:${traceId}] Repository: Executing query for ${userId}`);
+const result = await db.query(sql);
+console.log(`[HYP_1_TRACE:${traceId}] Repository: Rows returned=${result.rowCount}`);
+// DEBUG_HYP_1_END
+```
+
+#### 5.2 Timestamp Correlation
+
+When trace ID propagation isn't possible, use synchronized timestamps:
+
+```javascript
+// All files use same timestamp format for correlation
+const timestamp = new Date().toISOString();
+console.log(`[HYP_1][${timestamp}] File: event description`);
+```
+
+**Log Correlation Template**:
+
+```json
+{
+  "crossFileCorrelation": {
+    "hypothesisId": "HYP_1",
+    "traceIdFormat": "HYP_1_<timestamp>",
+    "logFormat": "[HYP_1_TRACE:<traceId>] <file>:<function>: <message>",
+    "files": [
+      {
+        "file": "src/controllers/user.ts",
+        "markers": {
+          "entry": "[HYP_1_TRACE:*] Controller: userId=*",
+          "exit": "[HYP_1_TRACE:*] Controller: Response=*"
+        },
+        "expectedOrder": 1
+      },
+      {
+        "file": "src/services/user.ts",
+        "markers": {
+          "entry": "[HYP_1_TRACE:*] Service: Looking up*",
+          "exit": "[HYP_1_TRACE:*] Service: Result=*"
+        },
+        "expectedOrder": 2
+      },
+      {
+        "file": "src/repositories/user.ts",
+        "markers": {
+          "entry": "[HYP_1_TRACE:*] Repository: Executing*",
+          "exit": "[HYP_1_TRACE:*] Repository: Rows returned=*"
+        },
+        "expectedOrder": 3
+      }
+    ],
+    "expectedFlow": "Controller → Service → Repository → Service → Controller",
+    "anomalyIndicators": [
+      "Out-of-order timestamps (possible race condition)",
+      "Missing log from expected file (possible early return)",
+      "Duplicate trace IDs (possible retry/loop)",
+      "Large time gap between files (possible timeout)"
+    ]
+  }
+}
+```
+
+### Multi-File Tracking Examples
+
+#### Example 1: Frontend-Backend-Database Issue
+
+**Issue**: User profile edit fails silently
+
+**Initial Hypothesis Files**:
+- `src/pages/profile.tsx` (UI shows success but data unchanged)
+
+**Expanded with Related Files**:
+
+```json
+{
+  "id": "HYP_1",
+  "description": "Profile update API returns 200 but database transaction rolls back",
+
+  "primaryFile": {
+    "path": "src/pages/profile.tsx",
+    "lineRange": "80-120",
+    "role": "Frontend form submission"
+  },
+
+  "relatedFiles": [
+    {
+      "path": "src/api/profile.ts",
+      "lineRange": "30-60",
+      "role": "API client",
+      "relationship": "Called from page component",
+      "variablesToInspect": ["requestBody", "response", "status"]
+    },
+    {
+      "path": "src/controllers/profile.ts",
+      "lineRange": "45-90",
+      "role": "Backend handler",
+      "relationship": "Receives API request",
+      "variablesToInspect": ["body", "userId", "updateResult"]
+    },
+    {
+      "path": "src/services/profile.ts",
+      "lineRange": "60-100",
+      "role": "Business logic",
+      "relationship": "Called from controller",
+      "variablesToInspect": ["profileData", "validationResult", "saveResult"]
+    },
+    {
+      "path": "src/repositories/profile.ts",
+      "lineRange": "40-80",
+      "role": "Database access",
+      "relationship": "Executes update query",
+      "variablesToInspect": ["query", "params", "affectedRows", "transactionId"]
+    }
+  ],
+
+  "allFiles": [
+    "src/pages/profile.tsx",
+    "src/api/profile.ts",
+    "src/controllers/profile.ts",
+    "src/services/profile.ts",
+    "src/repositories/profile.ts"
+  ],
+
+  "crossFileCorrelation": {
+    "traceId": "HYP_1_PROFILE_UPDATE",
+    "flow": "Frontend → API Client → Controller → Service → Repository",
+    "dataVariables": ["profileId", "profileData", "updateResult", "affectedRows"]
+  }
+}
+```
+
+#### Example 2: Race Condition Across Services
+
+**Issue**: Cache returns stale data intermittently
+
+**Initial Hypothesis Files**:
+- `src/services/user.ts` (returns outdated user data)
+
+**Expanded with Related Files**:
+
+```json
+{
+  "id": "HYP_2",
+  "description": "Cache invalidation races with concurrent read operations",
+
+  "primaryFile": {
+    "path": "src/services/user.ts",
+    "lineRange": "50-80",
+    "role": "Service reading from cache"
+  },
+
+  "relatedFiles": [
+    {
+      "path": "src/cache/manager.ts",
+      "lineRange": "20-60",
+      "role": "Cache singleton",
+      "relationship": "Shared state owner",
+      "variablesToInspect": ["cacheMap", "isInvalidating", "lastInvalidation"]
+    },
+    {
+      "path": "src/services/admin.ts",
+      "lineRange": "100-130",
+      "role": "Admin service",
+      "relationship": "Triggers cache invalidation",
+      "variablesToInspect": ["invalidationTimestamp", "affectedKeys"]
+    },
+    {
+      "path": "src/events/user-updated.ts",
+      "lineRange": "15-40",
+      "role": "Event handler",
+      "relationship": "Triggers async invalidation",
+      "variablesToInspect": ["eventTimestamp", "userId", "eventId"]
+    },
+    {
+      "path": "src/server/startup.ts",
+      "lineRange": "80-100",
+      "role": "Cache initialization",
+      "relationship": "Initializes cache singleton",
+      "variablesToInspect": ["initTimestamp", "cacheReady"]
+    }
+  ],
+
+  "allFiles": [
+    "src/services/user.ts",
+    "src/cache/manager.ts",
+    "src/services/admin.ts",
+    "src/events/user-updated.ts",
+    "src/server/startup.ts"
+  ],
+
+  "crossFileCorrelation": {
+    "traceId": "HYP_2_CACHE_RACE",
+    "timingCritical": true,
+    "timestampFormat": "ISO8601 with milliseconds",
+    "expectedSequence": [
+      "1. Cache read starts (user.ts)",
+      "2. Invalidation triggered (admin.ts)",
+      "3. Event emitted (user-updated.ts)",
+      "4. Cache cleared (manager.ts)",
+      "5. Cache read completes (user.ts)"
+    ],
+    "raceConditionSignature": "Step 5 completes before Step 4"
+  }
+}
+```
+
+#### Example 3: Cross-Service Integration Issue
+
+**Issue**: Payment processing times out for large orders
+
+**Initial Hypothesis Files**:
+- `src/services/payment.ts` (timeout error)
+
+**Expanded with Related Files**:
+
+```json
+{
+  "id": "HYP_3",
+  "description": "Payment API has longer response time for fraud-checked orders",
+
+  "primaryFile": {
+    "path": "src/services/payment.ts",
+    "lineRange": "40-90",
+    "role": "Payment service"
+  },
+
+  "relatedFiles": [
+    {
+      "path": "src/services/order.ts",
+      "lineRange": "120-160",
+      "role": "Order orchestration",
+      "relationship": "Calls payment service",
+      "variablesToInspect": ["orderTotal", "orderItems", "paymentRequest"]
+    },
+    {
+      "path": "src/api/external/payment-gateway.ts",
+      "lineRange": "30-80",
+      "role": "External API client",
+      "relationship": "Makes HTTP request to payment gateway",
+      "variablesToInspect": ["requestTimeout", "requestBody", "responseStatus"]
+    },
+    {
+      "path": "src/config/api.ts",
+      "lineRange": "15-35",
+      "role": "API configuration",
+      "relationship": "Provides timeout settings",
+      "variablesToInspect": ["paymentTimeout", "retryConfig"]
+    },
+    {
+      "path": "src/models/order.ts",
+      "lineRange": "50-80",
+      "role": "Order state machine",
+      "relationship": "Tracks order status during payment",
+      "variablesToInspect": ["status", "paymentStatus", "statusHistory"]
+    },
+    {
+      "path": "src/handlers/payment-webhook.ts",
+      "lineRange": "20-60",
+      "role": "Async payment handler",
+      "relationship": "Handles delayed payment confirmations",
+      "variablesToInspect": ["webhookPayload", "orderId", "paymentResult"]
+    }
+  ],
+
+  "allFiles": [
+    "src/services/payment.ts",
+    "src/services/order.ts",
+    "src/api/external/payment-gateway.ts",
+    "src/config/api.ts",
+    "src/models/order.ts",
+    "src/handlers/payment-webhook.ts"
+  ],
+
+  "crossFileCorrelation": {
+    "traceId": "HYP_3_PAYMENT_TIMEOUT",
+    "externalService": "payment-gateway",
+    "timeTracking": {
+      "requestSent": "payment-gateway.ts",
+      "timeoutOccurred": "payment.ts",
+      "webhookReceived": "payment-webhook.ts"
+    },
+    "dataVariables": ["orderId", "amount", "requestTimestamp", "responseTimestamp", "timeoutDuration"]
+  }
+}
+```
+
+### Dependency Analysis Commands
+
+**Template for running dependency analysis**:
+
+#### JavaScript/TypeScript Projects
+
+```bash
+# Find all imports in a file
+grep -E "^import|^const.*require" src/controllers/user.ts
+
+# Find files that import a specific module
+grep -rl "from.*services/user" src/
+
+# Trace dependency tree (if available)
+npx madge --circular src/controllers/user.ts
+npx dependency-cruiser --output-type json src/controllers/user.ts
+```
+
+#### Python Projects
+
+```bash
+# Find all imports in a file
+grep -E "^import|^from" src/controllers/user.py
+
+# Find files that import a specific module
+grep -rl "from services.user import\|import services.user" src/
+
+# Use pipdeptree for package dependencies
+pipdeptree --packages mypackage
+```
+
+#### Go Projects
+
+```bash
+# Find all imports in a file
+grep -E "^import|^\t\"" src/controllers/user.go
+
+# Find files that import a specific package
+grep -rl "\"myapp/services/user\"" .
+
+# Use go mod graph for module dependencies
+go mod graph | grep services/user
+```
+
+### Session Update After Multi-File Expansion
+
+After expanding hypotheses with related files, update the session:
+
+```json
+{
+  "hypotheses": [
+    {
+      "id": "HYP_1",
+      "description": "...",
+      "primaryFile": {...},
+      "relatedFiles": [...],
+      "allFiles": ["file1.ts", "file2.ts", "file3.ts"],
+      "lineRanges": {
+        "file1.ts": "40-55",
+        "file2.ts": "30-50",
+        "file3.ts": "60-80"
+      },
+      "crossFileCorrelation": {...},
+      "status": "pending",
+      "expandedAt": "2025-01-31T10:33:00Z"
+    }
+  ],
+  "status": "hypothesis_expanded"
+}
+```
+
+### Multi-File Tracking Rules
+
+1. **Always trace at least one level deep**: Don't stop at direct imports; follow calls through services
+2. **Include configuration files**: Many bugs stem from configuration issues
+3. **Track shared state owners**: Singletons, caches, and global state are common bug sources
+4. **Map data transformations**: Follow data from entry to exit, noting transformations
+5. **Consider async boundaries**: Note where sync becomes async (important for race conditions)
+6. **Document the relationship**: Each related file should explain WHY it's relevant
+7. **Set correlation strategy**: Define how logs from different files will be matched
+8. **Preserve original hypothesis**: Expansion adds context, doesn't change the core hypothesis
+
+### Proceeding to Next Phase
+
+After multi-file expansion is complete:
+
+1. Update session status to `hypothesis_expanded`
+2. All hypotheses now have complete file lists and correlation strategies
+3. Proceed to **Logging Infrastructure Review** to assess existing logging before instrumentation
+4. Then proceed to **Instrumentation** using the expanded file list and correlation strategy
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
