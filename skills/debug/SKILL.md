@@ -9,6 +9,190 @@ A systematic, hypothesis-driven debugging tool that diagnoses and fixes issues t
 
 ---
 
+## Intake Phase Template
+
+When the /debug skill is invoked, use this structured template to gather comprehensive issue information.
+
+### Step 1: Issue Classification
+
+Ask the user:
+
+> **What type of issue are you experiencing?**
+>
+> 1. Runtime Error (crash, exception, null reference)
+> 2. Logic Bug (incorrect behavior, wrong output)
+> 3. Intermittent/Flaky Issue (sometimes works, sometimes fails)
+> 4. Performance Issue (slowness, timeout, resource leak)
+> 5. Cross-Service/Integration Issue (API failure, distributed system problem)
+> 6. Other (please describe)
+
+### Step 2: Reproduction Steps
+
+Guide the user with:
+
+> **Please provide step-by-step reproduction instructions:**
+>
+> Example format:
+> ```
+> 1. Navigate to /upload page
+> 2. Click "Choose File" button
+> 3. Select a file larger than 100MB
+> 4. Click "Upload" button
+> 5. Observe the error message
+> ```
+>
+> Your reproduction steps:
+
+**Good Example:**
+```
+1. Start the application with NODE_ENV=production
+2. Call POST /api/users with payload {"name": "test", "email": null}
+3. Observe 500 error in response
+4. Check server logs for stack trace
+```
+
+**Poor Example (too vague):**
+```
+The API doesn't work when I send bad data
+```
+
+### Step 3: Expected vs Actual Behavior
+
+Guide the user with:
+
+> **What did you expect to happen?**
+>
+> (Describe the correct/desired behavior in detail)
+>
+> **What actually happened?**
+>
+> (Describe the incorrect behavior you observed)
+
+**Good Example:**
+- Expected: "API should return 400 Bad Request with validation error message: 'email field is required'"
+- Actual: "API returns 500 Internal Server Error with no error message. Server crashes and restarts."
+
+**Poor Example:**
+- Expected: "It should work"
+- Actual: "It doesn't work"
+
+### Step 4: Error Messages and Logs
+
+Guide the user with:
+
+> **Please provide any error messages, stack traces, or log output:**
+>
+> (Copy the full error text, including line numbers and file paths if available)
+>
+> Example:
+> ```
+> TypeError: Cannot read property 'id' of null
+>   at UserController.create (src/controllers/user.ts:45:23)
+>   at Router.handle (node_modules/express/lib/router/index.js:284:9)
+> ```
+
+### Step 5: Flaky/Intermittent Detection
+
+**Automatically scan the user's description for these keywords:**
+- "flaky", "flake", "flakiness"
+- "intermittent", "intermittently"
+- "sometimes", "occasionally"
+- "randomly", "random"
+- "inconsistent", "inconsistently"
+- "race condition"
+- "timing", "time-dependent"
+- "can't reproduce consistently"
+- "works locally but fails in CI"
+
+**If ANY keywords are detected, ask:**
+
+> **This issue appears to be intermittent/flaky. To verify a fix, how many consecutive successful test runs do you need?**
+>
+> (Default: 5 consecutive passes)
+>
+> Your success count:
+
+Store this value in the session as `successCount` (default: 1 for deterministic issues).
+
+### Step 6: Environment and Context
+
+Guide the user with:
+
+> **Additional context (optional but helpful):**
+>
+> - Language/framework version (e.g., Node.js 18.x, Python 3.11)
+> - Operating system (macOS, Linux, Windows)
+> - When did this start happening? (always, after a recent change, after deployment)
+> - Any recent changes to the codebase?
+> - Does this happen in specific environments? (local, staging, production)
+
+### Step 7: Structured Session Initialization
+
+After gathering all information, initialize the session file at `.claude/debug-sessions/[session-id].json` with this structure:
+
+```json
+{
+  "sessionId": "sess_<timestamp>_<random>",
+  "startTime": "<ISO 8601 timestamp>",
+  "initialCommit": "<git HEAD commit hash>",
+  "issueType": "<type from Step 1>",
+  "reproductionSteps": [
+    "Step 1: ...",
+    "Step 2: ..."
+  ],
+  "expectedBehavior": "<expected behavior from Step 3>",
+  "actualBehavior": "<actual behavior from Step 3>",
+  "errorMessages": [
+    "<error message from Step 4>"
+  ],
+  "isFlaky": true/false,
+  "successCount": 1 or <user-specified count>,
+  "environment": {
+    "language": "<detected or user-provided>",
+    "framework": "<detected or user-provided>",
+    "os": "<detected or user-provided>"
+  },
+  "additionalContext": "<Step 6 notes>",
+  "hypotheses": [],
+  "logs": {
+    "instrumentation": [],
+    "reproduction": []
+  },
+  "findings": [],
+  "iterationCount": 0,
+  "maxIterations": 5,
+  "researchFindings": [],
+  "fixesAttempted": []
+}
+```
+
+### Step 8: Confirmation
+
+Show the user a summary and confirm before proceeding:
+
+> **Debug Session Initialized**
+>
+> - Session ID: `sess_<id>`
+> - Issue Type: `<type>`
+> - Flaky: `<yes/no>`
+> - Success Count: `<N>`
+> - Initial Commit: `<hash>`
+>
+> I will now begin hypothesis generation and instrumentation. You can resume this session later if needed using session ID: `sess_<id>`
+>
+> Ready to proceed? (yes/no)
+
+### Template Usage Pattern
+
+```
+1. User invokes: /debug or "debug this issue"
+2. Claude uses Intake Phase Template (Steps 1-8)
+3. Session file created at .claude/debug-sessions/[session-id].json
+4. Proceed to Hypothesis Generation Phase
+```
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
