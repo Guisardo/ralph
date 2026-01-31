@@ -5033,6 +5033,1181 @@ After flaky test handling completes:
 
 ---
 
+## Log Analysis Workflow Template
+
+This section defines the systematic process for analyzing logs captured during reproduction to confirm, reject, or refine hypotheses. Log analysis is the critical decision point that determines whether debugging proceeds to fix application or returns to hypothesis generation.
+
+### Overview
+
+The Log Analysis phase:
+1. Parses logs for all instrumentation markers across all files
+2. Extracts variable values, execution flow, and timing data
+3. Compares actual behavior against expected evidence defined in hypotheses
+4. Marks each hypothesis as: **confirmed**, **rejected**, or **inconclusive**
+5. Generates new hypotheses if no confirmation achieved
+6. Enforces the 5-iteration maximum before triggering rollback
+
+---
+
+### Step 1: Collect and Parse Instrumentation Logs
+
+Extract all debug markers from the captured reproduction logs:
+
+**Log collection command:**
+```bash
+# Extract all DEBUG markers from reproduction log
+grep -E "DEBUG_HYP_[0-9]+|HYP_[0-9]+_TRACE|\\[HYP_[0-9]+\\]|\\[ENTER\\]|\\[EXIT\\]|\\[BRANCH\\]|\\[LOOP\\]|\\[TIMING\\]" \
+  logs/reproduction-hyp-*.log > logs/markers-extracted.log
+
+# Count markers per hypothesis
+for hyp_num in 1 2 3 4 5; do
+  count=$(grep -c "HYP_${hyp_num}" logs/markers-extracted.log 2>/dev/null || echo "0")
+  echo "HYP_${hyp_num}: ${count} markers found"
+done
+```
+
+**Marker pattern recognition:**
+
+| Marker Pattern | Meaning | Extraction Regex |
+|----------------|---------|------------------|
+| `// DEBUG_HYP_N_START` | Instrumentation block start | `DEBUG_HYP_(\d+)_START` |
+| `// DEBUG_HYP_N_END` | Instrumentation block end | `DEBUG_HYP_(\d+)_END` |
+| `[HYP_N]` | Log entry for hypothesis N | `\[HYP_(\d+)\]` |
+| `[HYP_N_TRACE:xxx]` | Cross-file trace ID | `\[HYP_(\d+)_TRACE:([^\]]+)\]` |
+| `[ENTER]` | Function entry point | `\[ENTER\]\s*(.+)` |
+| `[EXIT]` | Function exit point | `\[EXIT\]\s*(.+)` |
+| `[BRANCH]` | Conditional branch taken | `\[BRANCH\]\s*(.+)` |
+| `[LOOP]` | Loop iteration marker | `\[LOOP\]\s*(.+)` |
+| `[TIMING]` | Timing measurement | `\[TIMING\]\s*(.+):\s*([\d.]+)(ms|s)` |
+| `[VALUE]` | Variable value capture | `\[VALUE\]\s*(\w+)\s*=\s*(.+)` |
+
+**Multi-file log correlation:**
+
+For hypotheses spanning multiple files, correlate logs using trace IDs:
+
+```typescript
+interface CrossFileLogEntry {
+  traceId: string;
+  file: string;
+  lineNumber: number;
+  timestamp: string;
+  hypothesisId: string;
+  markerType: "ENTER" | "EXIT" | "BRANCH" | "LOOP" | "TIMING" | "VALUE";
+  content: string;
+  rawLog: string;
+}
+
+// Group logs by trace ID to reconstruct execution flow across files
+function correlateByTraceId(logs: CrossFileLogEntry[]): Map<string, CrossFileLogEntry[]> {
+  const grouped = new Map<string, CrossFileLogEntry[]>();
+  for (const log of logs) {
+    const existing = grouped.get(log.traceId) || [];
+    existing.push(log);
+    existing.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    grouped.set(log.traceId, existing);
+  }
+  return grouped;
+}
+```
+
+---
+
+### Step 2: Parse Variable Values and Execution Flow
+
+Extract structured data from log entries:
+
+**Variable value extraction:**
+
+```typescript
+interface ExtractedValue {
+  hypothesisId: string;
+  variableName: string;
+  value: any;
+  valueType: string;
+  file: string;
+  lineNumber: number;
+  timestamp: string;
+}
+
+function extractValues(logs: string[]): ExtractedValue[] {
+  const values: ExtractedValue[] = [];
+  const valueRegex = /\[HYP_(\d+)\].*?\[VALUE\]\s*(\w+)\s*=\s*(.+?)(?:\s*\[|$)/g;
+
+  for (const line of logs) {
+    const matches = line.matchAll(valueRegex);
+    for (const match of matches) {
+      values.push({
+        hypothesisId: `HYP_${match[1]}`,
+        variableName: match[2],
+        value: parseValue(match[3]),
+        valueType: inferType(match[3]),
+        file: extractFile(line),
+        lineNumber: extractLineNumber(line),
+        timestamp: extractTimestamp(line)
+      });
+    }
+  }
+  return values;
+}
+
+function parseValue(raw: string): any {
+  // Handle null/undefined
+  if (raw === "null" || raw === "undefined") return null;
+  // Handle booleans
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  // Handle numbers
+  if (/^-?\d+(\.\d+)?$/.test(raw)) return parseFloat(raw);
+  // Handle JSON objects/arrays
+  if (raw.startsWith("{") || raw.startsWith("[")) {
+    try { return JSON.parse(raw); } catch { return raw; }
+  }
+  // Handle strings (remove quotes if present)
+  if ((raw.startsWith('"') && raw.endsWith('"')) ||
+      (raw.startsWith("'") && raw.endsWith("'"))) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+```
+
+**Execution flow reconstruction:**
+
+```typescript
+interface ExecutionPath {
+  hypothesisId: string;
+  file: string;
+  sequence: ExecutionStep[];
+  branchesTaken: string[];
+  loopIterations: Map<string, number>;
+  entryExitPairs: { entry: string; exit: string; duration?: number }[];
+}
+
+interface ExecutionStep {
+  timestamp: string;
+  type: "ENTER" | "EXIT" | "BRANCH" | "LOOP";
+  location: string;
+  details: string;
+}
+
+function reconstructExecutionPath(logs: string[], hypothesisId: string): ExecutionPath {
+  const steps: ExecutionStep[] = [];
+  const branches: string[] = [];
+  const loops = new Map<string, number>();
+  const entryExitStack: { entry: string; timestamp: string }[] = [];
+  const pairs: { entry: string; exit: string; duration?: number }[] = [];
+
+  const stepRegex = /\[HYP_\d+\].*?\[(ENTER|EXIT|BRANCH|LOOP)\]\s*(.+)/g;
+
+  for (const line of logs) {
+    const match = stepRegex.exec(line);
+    if (match && line.includes(hypothesisId)) {
+      const type = match[1] as ExecutionStep["type"];
+      const details = match[2].trim();
+      const timestamp = extractTimestamp(line);
+
+      steps.push({
+        timestamp,
+        type,
+        location: extractFile(line) + ":" + extractLineNumber(line),
+        details
+      });
+
+      switch (type) {
+        case "ENTER":
+          entryExitStack.push({ entry: details, timestamp });
+          break;
+        case "EXIT":
+          const entry = entryExitStack.pop();
+          if (entry) {
+            const duration = calculateDuration(entry.timestamp, timestamp);
+            pairs.push({ entry: entry.entry, exit: details, duration });
+          }
+          break;
+        case "BRANCH":
+          branches.push(details);
+          break;
+        case "LOOP":
+          const loopId = details.split(":")[0];
+          loops.set(loopId, (loops.get(loopId) || 0) + 1);
+          break;
+      }
+    }
+  }
+
+  return {
+    hypothesisId,
+    file: extractPrimaryFile(logs, hypothesisId),
+    sequence: steps,
+    branchesTaken: branches,
+    loopIterations: loops,
+    entryExitPairs: pairs
+  };
+}
+```
+
+**Timing data extraction:**
+
+```typescript
+interface TimingMeasurement {
+  hypothesisId: string;
+  label: string;
+  durationMs: number;
+  file: string;
+  timestamp: string;
+}
+
+function extractTimings(logs: string[]): TimingMeasurement[] {
+  const timings: TimingMeasurement[] = [];
+  const timingRegex = /\[HYP_(\d+)\].*?\[TIMING\]\s*(.+?):\s*([\d.]+)(ms|s)/g;
+
+  for (const line of logs) {
+    const matches = line.matchAll(timingRegex);
+    for (const match of matches) {
+      let durationMs = parseFloat(match[3]);
+      if (match[4] === "s") durationMs *= 1000;
+
+      timings.push({
+        hypothesisId: `HYP_${match[1]}`,
+        label: match[2].trim(),
+        durationMs,
+        file: extractFile(line),
+        timestamp: extractTimestamp(line)
+      });
+    }
+  }
+  return timings;
+}
+```
+
+---
+
+### Step 3: Compare Actual vs Expected Evidence
+
+For each hypothesis, compare observed behavior against the expected evidence defined during hypothesis generation:
+
+**Evidence comparison structure:**
+
+```typescript
+interface EvidenceComparison {
+  hypothesisId: string;
+  expectedEvidence: string;
+  actualFindings: ActualFinding[];
+  verdict: "confirmed" | "rejected" | "inconclusive";
+  confidenceAdjustment: number; // -1.0 to +1.0 adjustment to original confidence
+  reasoning: string;
+}
+
+interface ActualFinding {
+  type: "value_match" | "value_mismatch" | "flow_match" | "flow_mismatch" |
+        "timing_anomaly" | "missing_data" | "unexpected_behavior";
+  description: string;
+  expected?: any;
+  actual?: any;
+  evidence: string; // Raw log line or extracted data
+  significance: "high" | "medium" | "low";
+}
+
+function compareEvidenceForHypothesis(
+  hypothesis: Hypothesis,
+  extractedValues: ExtractedValue[],
+  executionPath: ExecutionPath,
+  timings: TimingMeasurement[]
+): EvidenceComparison {
+  const findings: ActualFinding[] = [];
+
+  // Get all data for this hypothesis
+  const hypValues = extractedValues.filter(v => v.hypothesisId === hypothesis.id);
+  const hypTimings = timings.filter(t => t.hypothesisId === hypothesis.id);
+
+  // Check each variable we expected to inspect
+  for (const expectedVar of hypothesis.variablesToInspect) {
+    const actualValue = hypValues.find(v => v.variableName === expectedVar.name);
+
+    if (!actualValue) {
+      findings.push({
+        type: "missing_data",
+        description: `Variable '${expectedVar.name}' was not captured in logs`,
+        expected: expectedVar.expectedValue,
+        actual: undefined,
+        evidence: "No matching [VALUE] marker found",
+        significance: expectedVar.critical ? "high" : "medium"
+      });
+    } else if (matchesExpectation(actualValue.value, expectedVar.expectedValue, expectedVar.condition)) {
+      findings.push({
+        type: "value_match",
+        description: `Variable '${expectedVar.name}' matches hypothesis expectation`,
+        expected: expectedVar.expectedValue,
+        actual: actualValue.value,
+        evidence: `${actualValue.file}:${actualValue.lineNumber}`,
+        significance: "high"
+      });
+    } else {
+      findings.push({
+        type: "value_mismatch",
+        description: `Variable '${expectedVar.name}' does not match expectation`,
+        expected: expectedVar.expectedValue,
+        actual: actualValue.value,
+        evidence: `${actualValue.file}:${actualValue.lineNumber}`,
+        significance: expectedVar.critical ? "high" : "medium"
+      });
+    }
+  }
+
+  // Check execution flow against expected paths
+  const flowFindings = compareExecutionFlow(hypothesis, executionPath);
+  findings.push(...flowFindings);
+
+  // Check timing data for anomalies
+  const timingFindings = analyzeTimingData(hypothesis, hypTimings);
+  findings.push(...timingFindings);
+
+  // Determine verdict based on findings
+  return determineVerdict(hypothesis, findings);
+}
+```
+
+**Condition matching logic:**
+
+```typescript
+function matchesExpectation(actual: any, expected: any, condition?: string): boolean {
+  if (condition) {
+    switch (condition) {
+      case "equals": return actual === expected;
+      case "not_equals": return actual !== expected;
+      case "greater_than": return actual > expected;
+      case "less_than": return actual < expected;
+      case "contains": return String(actual).includes(String(expected));
+      case "not_contains": return !String(actual).includes(String(expected));
+      case "is_null": return actual === null || actual === undefined;
+      case "is_not_null": return actual !== null && actual !== undefined;
+      case "is_truthy": return Boolean(actual);
+      case "is_falsy": return !Boolean(actual);
+      case "matches_regex": return new RegExp(expected).test(String(actual));
+      case "type_is": return typeof actual === expected;
+      case "array_length": return Array.isArray(actual) && actual.length === expected;
+      case "array_includes": return Array.isArray(actual) && actual.includes(expected);
+      default: return actual === expected;
+    }
+  }
+
+  // Default deep equality comparison
+  if (typeof expected === "object" && typeof actual === "object") {
+    return JSON.stringify(actual) === JSON.stringify(expected);
+  }
+  return actual === expected;
+}
+```
+
+**Execution flow comparison:**
+
+```typescript
+function compareExecutionFlow(hypothesis: Hypothesis, path: ExecutionPath): ActualFinding[] {
+  const findings: ActualFinding[] = [];
+
+  // Check if expected branches were taken
+  if (hypothesis.expectedBranches) {
+    for (const expectedBranch of hypothesis.expectedBranches) {
+      const taken = path.branchesTaken.some(b => b.includes(expectedBranch.id));
+
+      if (expectedBranch.shouldBeTaken && !taken) {
+        findings.push({
+          type: "flow_mismatch",
+          description: `Expected branch '${expectedBranch.id}' was NOT taken`,
+          expected: "Branch executed",
+          actual: "Branch not executed",
+          evidence: `Branches taken: ${path.branchesTaken.join(", ") || "none"}`,
+          significance: "high"
+        });
+      } else if (!expectedBranch.shouldBeTaken && taken) {
+        findings.push({
+          type: "flow_mismatch",
+          description: `Unexpected branch '${expectedBranch.id}' WAS taken`,
+          expected: "Branch not executed",
+          actual: "Branch executed",
+          evidence: `Branch taken at: ${path.branchesTaken.find(b => b.includes(expectedBranch.id))}`,
+          significance: "high"
+        });
+      } else {
+        findings.push({
+          type: "flow_match",
+          description: `Branch '${expectedBranch.id}' behaved as expected`,
+          expected: expectedBranch.shouldBeTaken ? "taken" : "not taken",
+          actual: taken ? "taken" : "not taken",
+          evidence: "Execution flow matches hypothesis",
+          significance: "medium"
+        });
+      }
+    }
+  }
+
+  // Check entry/exit pairs for unexpected termination
+  for (const pair of path.entryExitPairs) {
+    if (pair.entry && !pair.exit) {
+      findings.push({
+        type: "unexpected_behavior",
+        description: `Function '${pair.entry}' entered but never exited (possible exception/crash)`,
+        expected: "Normal function completion",
+        actual: "Function did not exit",
+        evidence: `Entry: ${pair.entry}`,
+        significance: "high"
+      });
+    }
+  }
+
+  return findings;
+}
+```
+
+**Timing anomaly detection:**
+
+```typescript
+function analyzeTimingData(hypothesis: Hypothesis, timings: TimingMeasurement[]): ActualFinding[] {
+  const findings: ActualFinding[] = [];
+
+  // Check for expected timing thresholds
+  if (hypothesis.expectedTimings) {
+    for (const expected of hypothesis.expectedTimings) {
+      const actual = timings.find(t => t.label === expected.label);
+
+      if (!actual) {
+        findings.push({
+          type: "missing_data",
+          description: `Timing measurement '${expected.label}' not found`,
+          evidence: "No matching [TIMING] marker",
+          significance: "medium"
+        });
+      } else if (expected.maxMs && actual.durationMs > expected.maxMs) {
+        findings.push({
+          type: "timing_anomaly",
+          description: `Operation '${expected.label}' exceeded expected time`,
+          expected: `<= ${expected.maxMs}ms`,
+          actual: `${actual.durationMs}ms`,
+          evidence: `${actual.file} at ${actual.timestamp}`,
+          significance: "high"
+        });
+      } else if (expected.minMs && actual.durationMs < expected.minMs) {
+        findings.push({
+          type: "timing_anomaly",
+          description: `Operation '${expected.label}' completed faster than expected (possible skip)`,
+          expected: `>= ${expected.minMs}ms`,
+          actual: `${actual.durationMs}ms`,
+          evidence: `${actual.file} at ${actual.timestamp}`,
+          significance: "medium"
+        });
+      }
+    }
+  }
+
+  // Detect general timing anomalies (outliers)
+  if (timings.length >= 3) {
+    const durations = timings.map(t => t.durationMs);
+    const mean = durations.reduce((a, b) => a + b, 0) / durations.length;
+    const stdDev = Math.sqrt(
+      durations.reduce((sum, d) => sum + Math.pow(d - mean, 2), 0) / durations.length
+    );
+
+    for (const timing of timings) {
+      if (timing.durationMs > mean + 2 * stdDev) {
+        findings.push({
+          type: "timing_anomaly",
+          description: `Timing outlier detected for '${timing.label}'`,
+          expected: `~${mean.toFixed(2)}ms (avg)`,
+          actual: `${timing.durationMs}ms (>${(2 * stdDev).toFixed(2)}ms above mean)`,
+          evidence: `${timing.file} at ${timing.timestamp}`,
+          significance: "medium"
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+```
+
+---
+
+### Step 4: Determine Hypothesis Verdict
+
+Based on the evidence comparison, mark each hypothesis as confirmed, rejected, or inconclusive:
+
+**Verdict determination logic:**
+
+```typescript
+function determineVerdict(hypothesis: Hypothesis, findings: ActualFinding[]): EvidenceComparison {
+  const highSignificance = findings.filter(f => f.significance === "high");
+  const matches = findings.filter(f => f.type === "value_match" || f.type === "flow_match");
+  const mismatches = findings.filter(f => f.type === "value_mismatch" || f.type === "flow_mismatch");
+  const anomalies = findings.filter(f => f.type === "timing_anomaly" || f.type === "unexpected_behavior");
+  const missing = findings.filter(f => f.type === "missing_data");
+
+  let verdict: "confirmed" | "rejected" | "inconclusive";
+  let confidenceAdjustment: number;
+  let reasoning: string;
+
+  // Decision tree for verdict
+  const highMatches = highSignificance.filter(f =>
+    f.type === "value_match" || f.type === "flow_match" || f.type === "timing_anomaly"
+  );
+  const highMismatches = highSignificance.filter(f =>
+    f.type === "value_mismatch" || f.type === "flow_mismatch"
+  );
+
+  if (highMatches.length >= 2 && highMismatches.length === 0) {
+    // Strong confirmation: multiple high-significance matches, no contradictions
+    verdict = "confirmed";
+    confidenceAdjustment = 0.2;
+    reasoning = `Hypothesis confirmed by ${highMatches.length} high-significance evidence matches. ` +
+                `Key findings: ${highMatches.map(f => f.description).join("; ")}`;
+  } else if (highMismatches.length >= 1) {
+    // Strong rejection: at least one high-significance contradiction
+    verdict = "rejected";
+    confidenceAdjustment = -0.3;
+    reasoning = `Hypothesis rejected due to contradictory evidence: ${highMismatches.map(f => f.description).join("; ")}`;
+  } else if (missing.length > matches.length) {
+    // Inconclusive: more missing data than actual evidence
+    verdict = "inconclusive";
+    confidenceAdjustment = -0.1;
+    reasoning = `Insufficient evidence to confirm or reject. Missing data: ${missing.map(f => f.description).join("; ")}. ` +
+                `Consider adding more instrumentation.`;
+  } else if (anomalies.length > 0 && matches.length > mismatches.length) {
+    // Likely confirmed: anomalies detected that align with hypothesis
+    verdict = "confirmed";
+    confidenceAdjustment = 0.1;
+    reasoning = `Hypothesis likely confirmed. Anomalies detected: ${anomalies.map(f => f.description).join("; ")}. ` +
+                `Supporting evidence: ${matches.map(f => f.description).join("; ")}`;
+  } else if (matches.length > mismatches.length) {
+    // Weakly confirmed: more matches than mismatches
+    verdict = "confirmed";
+    confidenceAdjustment = 0.05;
+    reasoning = `Hypothesis confirmed with moderate confidence. Matches (${matches.length}) outweigh mismatches (${mismatches.length}).`;
+  } else if (mismatches.length > matches.length) {
+    // Weakly rejected: more mismatches than matches
+    verdict = "rejected";
+    confidenceAdjustment = -0.15;
+    reasoning = `Hypothesis rejected. Mismatches (${mismatches.length}) outweigh matches (${matches.length}): ` +
+                `${mismatches.map(f => f.description).join("; ")}`;
+  } else {
+    // Inconclusive: equal matches and mismatches or no clear signal
+    verdict = "inconclusive";
+    confidenceAdjustment = 0;
+    reasoning = `Evidence is mixed - equal matches (${matches.length}) and mismatches (${mismatches.length}). ` +
+                `Additional instrumentation needed to clarify.`;
+  }
+
+  return {
+    hypothesisId: hypothesis.id,
+    expectedEvidence: hypothesis.expectedEvidence,
+    actualFindings: findings,
+    verdict,
+    confidenceAdjustment,
+    reasoning
+  };
+}
+```
+
+**Verdict criteria summary:**
+
+| Verdict | Criteria | Confidence Adjustment |
+|---------|----------|----------------------|
+| **Confirmed** | ≥2 high-significance matches AND 0 high-significance mismatches | +0.20 |
+| **Confirmed** | Anomalies present AND matches > mismatches | +0.10 |
+| **Confirmed** | matches > mismatches (no high-sig contradictions) | +0.05 |
+| **Rejected** | ≥1 high-significance mismatch | -0.30 |
+| **Rejected** | mismatches > matches | -0.15 |
+| **Inconclusive** | missing data > matches | -0.10 |
+| **Inconclusive** | matches == mismatches OR no clear signal | 0.00 |
+
+---
+
+### Step 5: Update Session with Analysis Results
+
+After analyzing all hypotheses, update the session with comprehensive results:
+
+```json
+{
+  "sessionId": "sess_20250131_abc123",
+  "status": "log_analysis_complete",
+  "iterationCount": 1,
+  "maxIterations": 5,
+  "hypotheses": [
+    {
+      "id": "HYP_1",
+      "category": "null_reference",
+      "description": "Null pointer when accessing user.profile before validation",
+      "confidence": 0.85,
+      "status": "confirmed",
+      "analysisResult": {
+        "verdict": "confirmed",
+        "confidenceAdjustment": 0.20,
+        "finalConfidence": 1.0,
+        "reasoning": "Hypothesis confirmed by 3 high-significance evidence matches. Key findings: Variable 'user' was null at line 45; Branch 'validation-skip' was taken; Function 'getProfile' entered but never exited",
+        "findings": [
+          {
+            "type": "value_match",
+            "description": "Variable 'user' was null at critical access point",
+            "expected": "null or undefined",
+            "actual": null,
+            "evidence": "src/handlers/profile.ts:45",
+            "significance": "high"
+          },
+          {
+            "type": "flow_match",
+            "description": "Validation branch was skipped as hypothesized",
+            "expected": "taken",
+            "actual": "taken",
+            "evidence": "Branch 'early-return-check' taken at line 42",
+            "significance": "high"
+          },
+          {
+            "type": "unexpected_behavior",
+            "description": "Function 'getProfile' entered but never exited (exception)",
+            "expected": "Normal function completion",
+            "actual": "Function did not exit",
+            "evidence": "Entry at line 44, no corresponding exit",
+            "significance": "high"
+          }
+        ],
+        "analyzedAt": "2025-01-31T10:45:00Z"
+      }
+    },
+    {
+      "id": "HYP_2",
+      "category": "race_condition",
+      "description": "Concurrent requests overwriting shared cache",
+      "confidence": 0.65,
+      "status": "rejected",
+      "analysisResult": {
+        "verdict": "rejected",
+        "confidenceAdjustment": -0.30,
+        "finalConfidence": 0.35,
+        "reasoning": "Hypothesis rejected due to contradictory evidence: Cache was never accessed during reproduction; No concurrent requests detected",
+        "findings": [
+          {
+            "type": "flow_mismatch",
+            "description": "Expected cache access branch was NOT taken",
+            "expected": "Branch executed",
+            "actual": "Branch not executed",
+            "evidence": "Branches taken: validation-skip, early-return",
+            "significance": "high"
+          }
+        ],
+        "analyzedAt": "2025-01-31T10:45:00Z"
+      }
+    },
+    {
+      "id": "HYP_3",
+      "category": "logic_error",
+      "description": "Off-by-one error in pagination calculation",
+      "confidence": 0.50,
+      "status": "inconclusive",
+      "analysisResult": {
+        "verdict": "inconclusive",
+        "confidenceAdjustment": -0.10,
+        "finalConfidence": 0.40,
+        "reasoning": "Insufficient evidence to confirm or reject. Missing data: Variable 'pageIndex' was not captured; Variable 'offset' was not captured. Consider adding more instrumentation.",
+        "findings": [
+          {
+            "type": "missing_data",
+            "description": "Variable 'pageIndex' was not captured in logs",
+            "expected": "Numeric value",
+            "actual": undefined,
+            "evidence": "No matching [VALUE] marker found",
+            "significance": "high"
+          },
+          {
+            "type": "missing_data",
+            "description": "Variable 'offset' was not captured in logs",
+            "expected": "Calculated offset value",
+            "actual": undefined,
+            "evidence": "No matching [VALUE] marker found",
+            "significance": "high"
+          }
+        ],
+        "analyzedAt": "2025-01-31T10:45:00Z"
+      }
+    }
+  ],
+  "logAnalysis": {
+    "totalMarkersExtracted": 47,
+    "filesAnalyzed": ["src/handlers/profile.ts", "src/services/user.ts", "src/cache/manager.ts"],
+    "executionPathsReconstructed": 3,
+    "timingMeasurements": 8,
+    "crossFileCorrelations": 2,
+    "analysisCompletedAt": "2025-01-31T10:45:00Z"
+  }
+}
+```
+
+**New session fields for log analysis:**
+
+- `logAnalysis` (object): Summary of log analysis activity
+  - `totalMarkersExtracted` (number): Count of debug markers found
+  - `filesAnalyzed` (array): List of files that had instrumentation
+  - `executionPathsReconstructed` (number): How many execution flows were traced
+  - `timingMeasurements` (number): Count of timing data points
+  - `crossFileCorrelations` (number): How many cross-file trace IDs were matched
+  - `analysisCompletedAt` (string): ISO timestamp of analysis completion
+
+- Per-hypothesis `analysisResult` (object):
+  - `verdict` (string): "confirmed", "rejected", or "inconclusive"
+  - `confidenceAdjustment` (number): Change to confidence based on evidence
+  - `finalConfidence` (number): Original confidence + adjustment (capped at 1.0)
+  - `reasoning` (string): Human-readable explanation of verdict
+  - `findings` (array): List of all evidence findings
+  - `analyzedAt` (string): ISO timestamp
+
+---
+
+### Step 6: Handle No Confirmation - Generate New Hypotheses
+
+If no hypothesis is confirmed, generate 2-3 new hypotheses based on log insights:
+
+**New hypothesis generation from logs:**
+
+```typescript
+interface LogInsight {
+  type: "unexpected_null" | "unexpected_path" | "timing_spike" | "missing_call" |
+        "repeated_failure" | "state_corruption" | "boundary_violation";
+  description: string;
+  evidence: string[];
+  suggestedCategory: string;
+  suggestedFiles: string[];
+  suggestedLineRanges: Record<string, string>;
+}
+
+function generateNewHypothesesFromLogs(
+  rejectedHypotheses: Hypothesis[],
+  logInsights: LogInsight[],
+  existingHypotheses: Hypothesis[]
+): Hypothesis[] {
+  const newHypotheses: Hypothesis[] = [];
+  const existingCategories = new Set(existingHypotheses.map(h => h.category));
+
+  // Prioritize insights that suggest different root causes
+  const prioritizedInsights = logInsights
+    .filter(i => !existingCategories.has(i.suggestedCategory))
+    .sort((a, b) => {
+      // Prioritize insights with more evidence
+      return b.evidence.length - a.evidence.length;
+    });
+
+  // Generate 2-3 new hypotheses
+  const targetCount = Math.min(3, prioritizedInsights.length);
+
+  for (let i = 0; i < targetCount; i++) {
+    const insight = prioritizedInsights[i];
+    const hypId = `HYP_${existingHypotheses.length + i + 1}`;
+
+    newHypotheses.push({
+      id: hypId,
+      category: insight.suggestedCategory,
+      description: generateHypothesisDescription(insight),
+      rationale: `Generated from log analysis: ${insight.description}. Evidence: ${insight.evidence.join("; ")}`,
+      files: insight.suggestedFiles,
+      lineRanges: insight.suggestedLineRanges,
+      variablesToInspect: generateVariablesToInspect(insight),
+      expectedEvidence: generateExpectedEvidence(insight),
+      confidence: calculateInitialConfidence(insight, rejectedHypotheses),
+      status: "pending",
+      generatedAt: new Date().toISOString(),
+      generatedFrom: "log_analysis_insights"
+    });
+  }
+
+  return newHypotheses;
+}
+```
+
+**Log insight detection patterns:**
+
+```typescript
+function detectLogInsights(
+  extractedValues: ExtractedValue[],
+  executionPaths: ExecutionPath[],
+  timings: TimingMeasurement[]
+): LogInsight[] {
+  const insights: LogInsight[] = [];
+
+  // 1. Detect unexpected null/undefined values
+  const unexpectedNulls = extractedValues.filter(v =>
+    (v.value === null || v.value === undefined) &&
+    v.variableName.match(/^(?!is|has|should|can|will|may)/)  // Not boolean flags
+  );
+  if (unexpectedNulls.length > 0) {
+    insights.push({
+      type: "unexpected_null",
+      description: `Found ${unexpectedNulls.length} unexpected null/undefined values`,
+      evidence: unexpectedNulls.map(v => `${v.variableName} = ${v.value} at ${v.file}:${v.lineNumber}`),
+      suggestedCategory: "null_reference",
+      suggestedFiles: [...new Set(unexpectedNulls.map(v => v.file))],
+      suggestedLineRanges: groupByFileLineRanges(unexpectedNulls)
+    });
+  }
+
+  // 2. Detect unexpected execution paths
+  for (const path of executionPaths) {
+    const incompletePairs = path.entryExitPairs.filter(p => p.entry && !p.exit);
+    if (incompletePairs.length > 0) {
+      insights.push({
+        type: "unexpected_path",
+        description: `Functions entered but not exited: ${incompletePairs.map(p => p.entry).join(", ")}`,
+        evidence: incompletePairs.map(p => `${p.entry} - no matching exit`),
+        suggestedCategory: "exception_handling",
+        suggestedFiles: [path.file],
+        suggestedLineRanges: { [path.file]: extractLineRangeFromPath(path) }
+      });
+    }
+  }
+
+  // 3. Detect timing spikes
+  const avgTiming = timings.reduce((sum, t) => sum + t.durationMs, 0) / timings.length;
+  const timingSpikes = timings.filter(t => t.durationMs > avgTiming * 3);
+  if (timingSpikes.length > 0) {
+    insights.push({
+      type: "timing_spike",
+      description: `Operations taking 3x+ longer than average: ${timingSpikes.map(t => t.label).join(", ")}`,
+      evidence: timingSpikes.map(t => `${t.label}: ${t.durationMs}ms (avg: ${avgTiming.toFixed(2)}ms)`),
+      suggestedCategory: "performance_bottleneck",
+      suggestedFiles: [...new Set(timingSpikes.map(t => t.file))],
+      suggestedLineRanges: groupByFileLineRanges(timingSpikes.map(t => ({ file: t.file, lineNumber: 0 })))
+    });
+  }
+
+  // 4. Detect missing function calls (expected but not present)
+  for (const path of executionPaths) {
+    if (path.entryExitPairs.length === 0 && path.sequence.length === 0) {
+      insights.push({
+        type: "missing_call",
+        description: `No execution detected in instrumented region for ${path.hypothesisId}`,
+        evidence: [`File ${path.file} has instrumentation but no execution markers captured`],
+        suggestedCategory: "code_path_not_reached",
+        suggestedFiles: [path.file],
+        suggestedLineRanges: { [path.file]: "1-100" }  // Will be refined
+      });
+    }
+  }
+
+  // 5. Detect repeated patterns that might indicate loops or retries
+  const valueCounts = new Map<string, number>();
+  for (const v of extractedValues) {
+    const key = `${v.variableName}=${JSON.stringify(v.value)}`;
+    valueCounts.set(key, (valueCounts.get(key) || 0) + 1);
+  }
+  const repeatedValues = [...valueCounts.entries()].filter(([_, count]) => count >= 3);
+  if (repeatedValues.length > 0) {
+    insights.push({
+      type: "repeated_failure",
+      description: `Same value captured multiple times (possible retry loop or stuck state)`,
+      evidence: repeatedValues.map(([key, count]) => `${key} appeared ${count} times`),
+      suggestedCategory: "infinite_loop",
+      suggestedFiles: [...new Set(extractedValues.map(v => v.file))],
+      suggestedLineRanges: groupByFileLineRanges(extractedValues)
+    });
+  }
+
+  return insights;
+}
+```
+
+**Template prompt for new hypothesis generation:**
+
+```
+Based on the log analysis results, I need to generate new hypotheses.
+
+REJECTED HYPOTHESES:
+{{#each rejectedHypotheses}}
+- {{this.id}}: {{this.description}}
+  Rejection reason: {{this.analysisResult.reasoning}}
+{{/each}}
+
+LOG INSIGHTS DETECTED:
+{{#each logInsights}}
+- Type: {{this.type}}
+  Description: {{this.description}}
+  Evidence: {{this.evidence}}
+  Suggested category: {{this.suggestedCategory}}
+{{/each}}
+
+REMAINING ITERATIONS: {{remainingIterations}} of 5
+
+GENERATION RULES:
+1. Generate 2-3 new hypotheses based on log insights
+2. Avoid repeating rejected hypothesis categories unless evidence strongly suggests revisiting
+3. Focus on insights with the most evidence
+4. Include specific file locations and line ranges from the insights
+5. Define clear expected evidence for each new hypothesis
+6. Assign confidence scores based on insight strength (more evidence = higher confidence)
+
+For each new hypothesis, provide:
+- ID (HYP_N format, incrementing from existing)
+- Category (from failure mode taxonomy)
+- Description (specific, testable statement)
+- Rationale (why logs suggest this)
+- Files and line ranges to investigate
+- Variables to inspect
+- Expected evidence that would confirm
+- Initial confidence score (0.0-1.0)
+```
+
+---
+
+### Step 7: Enforce Maximum Iterations
+
+Check iteration count and trigger rollback if limit reached:
+
+**Iteration check logic:**
+
+```typescript
+function checkIterationLimit(session: DebugSession): "continue" | "rollback" {
+  const currentIteration = session.iterationCount;
+  const maxIterations = session.maxIterations || 5;
+
+  // Check if we have a confirmed hypothesis
+  const confirmedHypothesis = session.hypotheses.find(h => h.status === "confirmed");
+
+  if (confirmedHypothesis) {
+    // Confirmed hypothesis - proceed to research/fix phase
+    return "continue";
+  }
+
+  // No confirmation - check iteration limit
+  if (currentIteration >= maxIterations) {
+    console.log(`
+⚠️ Maximum iterations (${maxIterations}) reached without confirmed hypothesis.
+
+Iterations completed: ${currentIteration}
+Hypotheses tested: ${session.hypotheses.length}
+  - Confirmed: ${session.hypotheses.filter(h => h.status === "confirmed").length}
+  - Rejected: ${session.hypotheses.filter(h => h.status === "rejected").length}
+  - Inconclusive: ${session.hypotheses.filter(h => h.status === "inconclusive").length}
+
+Triggering rollback and failure summary generation...
+    `);
+    return "rollback";
+  }
+
+  // Under limit - generate new hypotheses and continue
+  console.log(`
+Iteration ${currentIteration} of ${maxIterations} complete.
+No hypothesis confirmed. Generating new hypotheses from log insights...
+  `);
+  return "continue";
+}
+```
+
+**Session update for iteration increment:**
+
+```json
+{
+  "sessionId": "sess_20250131_abc123",
+  "status": "iterating",
+  "iterationCount": 2,
+  "maxIterations": 5,
+  "iterationHistory": [
+    {
+      "iteration": 1,
+      "hypothesesTested": ["HYP_1", "HYP_2", "HYP_3"],
+      "confirmed": 0,
+      "rejected": 2,
+      "inconclusive": 1,
+      "newHypothesesGenerated": ["HYP_4", "HYP_5"],
+      "completedAt": "2025-01-31T10:50:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### Step 8: Log Analysis Rules
+
+1. **Always extract all markers** - Parse every instrumentation marker from reproduction logs before analysis
+2. **Use structured parsing** - Extract values, flows, and timings into typed structures for reliable comparison
+3. **Cross-file correlation** - Match trace IDs across files to reconstruct complete execution paths
+4. **Evidence-based verdicts** - Base confirmations/rejections on specific evidence, never on assumptions
+5. **High-significance priority** - Weight high-significance findings more heavily in verdict determination
+6. **Generate actionable insights** - When generating new hypotheses, include specific file locations and evidence
+7. **Respect iteration limits** - Enforce the 5-iteration maximum to prevent infinite debugging loops
+8. **Document reasoning** - Always provide human-readable reasoning for verdicts and new hypothesis generation
+9. **Preserve rejected context** - Keep full analysis results for rejected hypotheses to inform future iterations
+10. **Timing matters** - Don't ignore timing anomalies; they often indicate performance bugs or race conditions
+
+---
+
+### Step 9: Session Status Transitions
+
+After log analysis, the session status depends on the outcome:
+
+**Confirmed hypothesis path:**
+```json
+{
+  "status": "hypothesis_confirmed",
+  "confirmedHypothesis": "HYP_1",
+  "nextPhase": "web_research"
+}
+```
+→ Proceed to **Web Research Phase**
+
+**No confirmation, iterations remaining:**
+```json
+{
+  "status": "iterating",
+  "iterationCount": 2,
+  "newHypotheses": ["HYP_4", "HYP_5"],
+  "nextPhase": "instrumentation"
+}
+```
+→ Return to **Instrumentation Phase** with new hypotheses
+
+**No confirmation, max iterations reached:**
+```json
+{
+  "status": "max_iterations_reached",
+  "iterationCount": 5,
+  "nextPhase": "rollback"
+}
+```
+→ Proceed to **Rollback and Failure Handling**
+
+---
+
+### Example: Complete Log Analysis Flow
+
+**Scenario:** Null reference error in user profile handler
+
+**Input logs (reproduction-hyp-1.log):**
+```
+2025-01-31T10:40:00.123Z [HYP_1] [ENTER] getProfile(userId: "user_123")
+2025-01-31T10:40:00.125Z [HYP_1] [VALUE] user = null
+2025-01-31T10:40:00.126Z [HYP_1] [BRANCH] validation-skip taken (user falsy)
+2025-01-31T10:40:00.127Z [HYP_1] [VALUE] user.profile = TypeError: Cannot read property 'profile' of null
+2025-01-31T10:40:00.128Z [HYP_1] [HYP_1_TRACE:trace_abc123] Request failed at profile access
+```
+
+**Analysis process:**
+
+1. **Extract markers:**
+   ```
+   Found 5 markers for HYP_1:
+   - 1 ENTER marker
+   - 2 VALUE markers
+   - 1 BRANCH marker
+   - 1 TRACE marker
+   ```
+
+2. **Parse values:**
+   ```typescript
+   extractedValues = [
+     { hypothesisId: "HYP_1", variableName: "user", value: null, ... },
+     { hypothesisId: "HYP_1", variableName: "user.profile", value: "TypeError: Cannot read property 'profile' of null", ... }
+   ]
+   ```
+
+3. **Reconstruct execution flow:**
+   ```typescript
+   executionPath = {
+     hypothesisId: "HYP_1",
+     sequence: [
+       { type: "ENTER", details: "getProfile(userId: 'user_123')" },
+       { type: "BRANCH", details: "validation-skip taken (user falsy)" }
+     ],
+     branchesTaken: ["validation-skip"],
+     entryExitPairs: [{ entry: "getProfile", exit: undefined }]  // No exit = exception
+   }
+   ```
+
+4. **Compare to expected evidence:**
+   ```
+   HYP_1 expected: "user variable should be null when fetched before validation"
+   HYP_1 expected: "validation-skip branch should be taken"
+   HYP_1 expected: "exception should occur on profile access"
+
+   Actual findings:
+   ✓ user = null (HIGH match)
+   ✓ validation-skip branch taken (HIGH match)
+   ✓ Function entered but never exited (HIGH - unexpected behavior)
+   ```
+
+5. **Determine verdict:**
+   ```
+   High-significance matches: 3
+   High-significance mismatches: 0
+
+   Verdict: CONFIRMED
+   Confidence adjustment: +0.20
+   Final confidence: 1.0 (capped)
+   ```
+
+6. **Update session:**
+   ```json
+   {
+     "status": "hypothesis_confirmed",
+     "confirmedHypothesis": "HYP_1",
+     "hypotheses": [
+       {
+         "id": "HYP_1",
+         "status": "confirmed",
+         "analysisResult": {
+           "verdict": "confirmed",
+           "reasoning": "Hypothesis confirmed by 3 high-significance evidence matches..."
+         }
+       }
+     ]
+   }
+   ```
+
+7. **Next phase:** Proceed to Web Research Phase
+
+---
+
+### Integration with Other Phases
+
+**From: Reproduction Phase** (or Flaky Test Handling Phase)
+- Input: Reproduction logs in `logs/reproduction-hyp-*.log`
+- Input: Session with hypotheses and instrumentation details
+- Input: `isFlaky` flag determines if coming from flaky handling
+
+**To: Web Research Phase** (if hypothesis confirmed)
+- Output: Confirmed hypothesis with evidence
+- Output: Analysis results for documentation
+- Output: Session status `hypothesis_confirmed`
+
+**To: Instrumentation Phase** (if no confirmation, iterations remaining)
+- Output: New hypotheses generated from log insights
+- Output: Incremented iteration count
+- Output: Session status `iterating`
+
+**To: Rollback Phase** (if no confirmation, max iterations reached)
+- Output: Complete analysis history across all iterations
+- Output: All rejected hypotheses with reasons
+- Output: Session status `max_iterations_reached`
+
+---
+
+### Proceeding to Next Phase
+
+After log analysis completes:
+
+1. **Session updated** with analysis results and hypothesis verdicts
+2. **Iteration count checked** against maximum (5)
+3. **Next phase determined** based on outcome
+
+**If hypothesis confirmed:**
+- Status: `hypothesis_confirmed`
+- **Proceed to:** Web Research Phase
+
+**If no confirmation, iterations remaining:**
+- Status: `iterating`
+- New hypotheses generated from log insights
+- **Return to:** Instrumentation Phase
+
+**If no confirmation, max iterations reached:**
+- Status: `max_iterations_reached`
+- **Proceed to:** Rollback and Failure Handling Phase
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
