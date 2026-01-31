@@ -7725,6 +7725,841 @@ After fix is applied and committed:
 
 ---
 
+## Fix Verification Workflow Template
+
+After a fix is applied and committed, the next step is to verify that the fix actually resolves the issue. This template guides systematic verification through reproduction and log comparison, with robust rollback for failed fixes.
+
+---
+
+### Overview
+
+The fix verification workflow ensures:
+
+1. **Reproduction**: Re-runs the same reproduction steps used in the initial investigation
+2. **Evidence-Based**: Compares new logs against original issue logs to verify resolution
+3. **Rollback-Safe**: Failed fixes are rolled back cleanly while preserving instrumentation
+4. **Context-Preserving**: Failed fix context is captured for improved next hypothesis
+5. **Loop-Capable**: Returns to hypothesis generation with learnings from failed attempt
+
+---
+
+### Step 1: Re-Run Reproduction
+
+**When**: Session status is `fix_applied`
+
+**Action**: Execute the same reproduction method used during initial investigation
+
+**Reproduction Method Selection:**
+
+```
+Verification Reproduction Selection:
+
+1. CHECK REPRODUCTION METHOD from session:
+   - Method: ${session.reproductionRuns[0].method}
+   - If 'automated': Re-run the same test file
+   - If 'manual': Guide user through same manual steps
+
+2. RETRIEVE REPRODUCTION DETAILS:
+   - Test file: ${session.reproductionRuns[0].testFile}
+   - Test command: ${session.reproductionRuns[0].testCommand}
+   - Manual script location: ${session.manualReproductionScript}
+
+3. PREPARE LOG CAPTURE:
+   - Use same log capture mechanism as initial reproduction
+   - Include all instrumentation markers
+   - Capture full stdout/stderr
+```
+
+**Automated Verification Template:**
+
+```bash
+#!/bin/bash
+# Fix Verification - Automated Reproduction
+# Session: ${session.sessionId}
+# Fix ID: ${currentFix.fixId}
+
+# Create verification logs directory
+mkdir -p logs/verification
+
+# Run the same test command used for initial reproduction
+${session.reproductionRuns[0].testCommand} 2>&1 | tee logs/verification/verification-${currentFix.fixId}.log
+
+# Store exit code
+echo $? > logs/verification/exit-code-${currentFix.fixId}.txt
+
+# Extract markers from verification logs
+grep -E "(DEBUG_HYP_|HYP_[0-9]+_|\\[ENTER\\]|\\[EXIT\\]|\\[BRANCH\\]|\\[VALUE\\])" \
+    logs/verification/verification-${currentFix.fixId}.log \
+    > logs/verification/markers-${currentFix.fixId}.txt
+```
+
+**Manual Verification Template:**
+
+```markdown
+## Manual Fix Verification
+
+**Session**: ${session.sessionId}
+**Fix Applied**: ${currentFix.fixId}
+**Approach**: ${currentFix.approach}
+
+### Instructions
+
+Please re-run the manual reproduction steps to verify the fix:
+
+#### Original Reproduction Steps
+${session.reproductionSteps.map((step, i) => (i + 1) + '. ' + step).join('\n')}
+
+#### Expected Outcome After Fix
+- Issue should NOT reproduce
+- Expected behavior: ${session.expectedBehavior}
+- Error messages should NOT appear
+
+#### Capture Instructions
+
+1. Run the reproduction steps above
+2. Observe the behavior
+3. Copy any log output or error messages
+4. Report whether:
+   - [ ] Issue NO LONGER reproduces (fix worked)
+   - [ ] Issue STILL reproduces (fix failed)
+   - [ ] Different issue appeared (regression)
+
+#### Verification Log Location
+Save any log output to: logs/verification/verification-${currentFix.fixId}.log
+```
+
+---
+
+### Step 2: Compare Logs to Original Issue
+
+**When**: Verification reproduction completes
+
+**Action**: Compare new logs against original issue logs to determine fix success
+
+**Log Comparison Template:**
+
+```
+Log Comparison Analysis:
+
+ORIGINAL ISSUE LOGS (from initial reproduction):
+- Run ID: ${session.reproductionRuns[0].runId}
+- Issue Reproduced: ${session.reproductionRuns[0].reproduced}
+- Error Observed: ${session.reproductionRuns[0].errorObserved}
+- Key Markers: ${session.reproductionRuns[0].debugMarkers.filter(m => m.significance === 'high')}
+
+VERIFICATION LOGS (after fix):
+- Run ID: verification-${currentFix.fixId}
+- File: logs/verification/verification-${currentFix.fixId}.log
+- Exit Code: ${verificationExitCode}
+- Key Markers: ${verificationMarkers.filter(m => m.significance === 'high')}
+
+COMPARISON CRITERIA:
+1. Exit code comparison (0 = success, non-0 = failure)
+2. Error message presence/absence
+3. Instrumentation marker values (before vs after)
+4. Expected behavior observation
+```
+
+**Evidence Comparison Structure:**
+
+```json
+{
+  "logComparison": {
+    "verificationRunId": "verification-${currentFix.fixId}",
+    "timestamp": "${new Date().toISOString()}",
+    "originalRunId": "${session.reproductionRuns[0].runId}",
+    "comparisons": [
+      {
+        "criterion": "exit_code",
+        "original": 1,
+        "verification": 0,
+        "improved": true,
+        "notes": "Test now passes (exit 0)"
+      },
+      {
+        "criterion": "error_presence",
+        "original": true,
+        "verification": false,
+        "improved": true,
+        "notes": "TypeError no longer appears"
+      },
+      {
+        "criterion": "expected_behavior",
+        "original": false,
+        "verification": true,
+        "improved": true,
+        "notes": "API now returns 400 with validation message"
+      },
+      {
+        "criterion": "instrumentation_values",
+        "original": { "user_value": "null" },
+        "verification": { "user_value": "{ id: 123, name: 'test' }" },
+        "improved": true,
+        "notes": "Null reference issue resolved"
+      }
+    ],
+    "overallResult": "improved|unchanged|regressed"
+  }
+}
+```
+
+**Comparison Analysis Prompt:**
+
+```
+Analyze verification logs against original issue:
+
+1. EXIT CODE COMPARISON:
+   - Original: ${originalExitCode} (${originalExitCode === 0 ? 'pass' : 'fail'})
+   - Verification: ${verificationExitCode} (${verificationExitCode === 0 ? 'pass' : 'fail'})
+   - Assessment: ${verificationExitCode === 0 && originalExitCode !== 0 ? 'IMPROVED' : 'CHECK FURTHER'}
+
+2. ERROR MESSAGE COMPARISON:
+   - Original errors present: ${originalErrorsPresent ? 'Yes' : 'No'}
+   - Verification errors present: ${verificationErrorsPresent ? 'Yes' : 'No'}
+   - Target error resolved: ${targetErrorResolved ? 'Yes' : 'No'}
+   - New errors introduced: ${newErrorsIntroduced ? 'Yes - REGRESSION' : 'No'}
+
+3. MARKER VALUE COMPARISON:
+   - Compare instrumentation output for hypothesis-critical variables
+   - Original: ${originalMarkerValues}
+   - Verification: ${verificationMarkerValues}
+   - Values match expected: ${valuesMatchExpected ? 'Yes' : 'No'}
+
+4. BEHAVIOR COMPARISON:
+   - Expected behavior: ${session.expectedBehavior}
+   - Behavior observed in verification: ${observedBehavior}
+   - Matches expected: ${behaviorMatchesExpected ? 'Yes' : 'No'}
+```
+
+---
+
+### Step 3: Determine Verification Outcome
+
+**When**: Log comparison complete
+
+**Action**: Make a clear determination of whether the fix resolved the issue
+
+**Verification Decision Tree:**
+
+```
+Verification Outcome Determination:
+
+START
+│
+├─ Exit code improved (was failing, now passing)?
+│  ├─ YES → Check for regressions
+│  │        ├─ New errors introduced? → REGRESSION (failed)
+│  │        └─ No new errors? → Continue to behavior check
+│  │
+│  └─ NO → Exit code still failing?
+│          ├─ Same error? → FIX FAILED
+│          └─ Different error? → REGRESSION (failed)
+│
+├─ Target error message resolved?
+│  ├─ YES → Continue to behavior check
+│  └─ NO → FIX FAILED (error still present)
+│
+├─ Expected behavior now observed?
+│  ├─ YES → FIX VERIFIED (success)
+│  └─ NO → Check if partial improvement
+│          ├─ Some improvement? → FIX INCOMPLETE (failed)
+│          └─ No improvement? → FIX FAILED
+│
+END
+```
+
+**Outcome Categories:**
+
+| Outcome | Description | Next Action |
+|---------|-------------|-------------|
+| `verified` | Fix completely resolves the issue | Proceed to Cleanup Phase |
+| `failed` | Fix does not resolve the issue | Rollback fix, return to Hypothesis Generation |
+| `regression` | Fix introduces new issues | Rollback fix, return to Hypothesis Generation |
+| `partial` | Fix partially resolves the issue | Rollback fix, refine hypothesis |
+| `inconclusive` | Cannot determine fix effectiveness | Request additional verification |
+
+**Verification Result Structure:**
+
+```json
+{
+  "verificationResult": {
+    "fixId": "${currentFix.fixId}",
+    "hypothesisId": "${currentFix.basedOnHypothesis}",
+    "timestamp": "${new Date().toISOString()}",
+    "outcome": "verified|failed|regression|partial|inconclusive",
+    "evidence": {
+      "exitCodeImproved": true,
+      "errorResolved": true,
+      "behaviorCorrect": true,
+      "noRegressions": true
+    },
+    "reasoning": "Detailed explanation of why this outcome was determined",
+    "verificationLogs": "logs/verification/verification-${currentFix.fixId}.log",
+    "nextAction": "cleanup|rollback|manual_review"
+  }
+}
+```
+
+---
+
+### Step 4: Handle Verification Success
+
+**When**: Verification outcome is `verified`
+
+**Action**: Update session and proceed to cleanup
+
+**Success Handling Template:**
+
+```
+Fix Verification SUCCESS:
+
+✅ Fix ${currentFix.fixId} has been VERIFIED
+
+Summary:
+- Hypothesis: ${currentFix.basedOnHypothesis}
+- Approach: ${currentFix.approach}
+- Files Modified: ${currentFix.filesModified.join(', ')}
+- Evidence: ${verificationResult.evidence}
+
+Proceeding to Instrumentation Cleanup Phase...
+```
+
+**Session Update for Success:**
+
+```json
+{
+  "status": "fix_verified",
+  "verificationResult": {
+    "fixId": "${currentFix.fixId}",
+    "outcome": "verified",
+    "timestamp": "${new Date().toISOString()}",
+    "evidence": { ... },
+    "verificationLogs": "logs/verification/verification-${currentFix.fixId}.log"
+  },
+  "verifiedFix": {
+    "fixId": "${currentFix.fixId}",
+    "commitSha": "${currentFix.commitSha}",
+    "approach": "${currentFix.approach}",
+    "filesModified": [ ... ]
+  }
+}
+```
+
+**Next Phase Routing (Success):**
+
+```
+SUCCESS PATH:
+1. Session status updated to: fix_verified
+2. Verified fix details stored
+3. PROCEED TO: Instrumentation Cleanup Phase
+4. Cleanup will remove all DEBUG markers
+5. Then: Success Summary Generation
+```
+
+---
+
+### Step 5: Handle Verification Failure - Rollback Fix
+
+**When**: Verification outcome is `failed`, `regression`, or `partial`
+
+**Action**: Rollback ONLY the fix commit while preserving instrumentation
+
+**Rollback Strategy:**
+
+```
+Fix Rollback Strategy:
+
+CRITICAL: Rollback ONLY the fix. Preserve instrumentation.
+
+1. IDENTIFY FIX COMMIT:
+   - Fix commit SHA: ${currentFix.commitSha}
+   - Fix commit message: ${currentFix.commitMessage}
+   - Files modified by fix: ${currentFix.filesModified}
+
+2. IDENTIFY INSTRUMENTATION STATE:
+   - Instrumentation commit SHA: ${session.instrumentation.commitSha}
+   - Files with instrumentation: ${session.instrumentation.files}
+   - Markers present: ${session.instrumentation.markers}
+
+3. ROLLBACK APPROACH:
+   - Option A: git revert ${currentFix.commitSha} (if clean)
+   - Option B: git checkout ${currentFix.commitSha}^ -- <files> (selective)
+   - Option C: Manual code removal of fix changes
+
+4. VERIFY AFTER ROLLBACK:
+   - Fix code removed: YES
+   - Instrumentation markers present: YES (CRITICAL)
+   - Code compiles/runs: YES
+```
+
+**Rollback Execution Template:**
+
+```bash
+#!/bin/bash
+# Fix Rollback Script
+# Session: ${session.sessionId}
+# Rolling back fix: ${currentFix.fixId}
+
+# Store current state for recovery
+git stash push -m "pre-rollback-${currentFix.fixId}"
+
+# Method 1: Git revert (preferred if fix was clean commit)
+git revert --no-commit ${currentFix.commitSha}
+
+# OR Method 2: Selective file rollback
+# git checkout ${currentFix.commitSha}^ -- ${currentFix.filesModified.join(' ')}
+
+# Verify instrumentation markers still present
+echo "Verifying instrumentation preservation..."
+for file in ${session.instrumentation.files.join(' ')}; do
+    if grep -q "DEBUG_HYP_" "$file"; then
+        echo "✅ Instrumentation preserved in $file"
+    else
+        echo "❌ WARNING: Instrumentation missing in $file"
+        echo "Restoring from pre-fix state..."
+        git checkout ${session.instrumentation.commitSha} -- "$file"
+    fi
+done
+
+# Commit the rollback
+git commit -m "rollback: Revert fix ${currentFix.fixId} (verification failed)
+
+Fix did not resolve issue. Instrumentation preserved for next iteration.
+Session: ${session.sessionId}
+Reason: ${verificationResult.reasoning}"
+```
+
+**Rollback Verification Checklist:**
+
+| Check | Expected | Verified |
+|-------|----------|----------|
+| Fix code removed from all files | Fix changes reverted | ☐ |
+| `DEBUG_HYP_N_START` markers present | All markers intact | ☐ |
+| `DEBUG_HYP_N_END` markers present | All markers intact | ☐ |
+| Instrumentation logging preserved | Log statements present | ☐ |
+| Code compiles successfully | No syntax errors | ☐ |
+| Tests run (may still fail) | Can execute reproduction | ☐ |
+
+---
+
+### Step 6: Verify Rollback Integrity
+
+**When**: After rollback execution
+
+**Action**: Confirm fix is removed AND instrumentation is preserved
+
+**Rollback Integrity Verification Template:**
+
+```bash
+#!/bin/bash
+# Rollback Integrity Verification
+# Session: ${session.sessionId}
+
+echo "=== Rollback Integrity Verification ==="
+
+# Check 1: Fix code should NOT be present
+echo "Checking fix code removal..."
+FIX_PATTERNS=(
+    "${currentFix.codePatterns[0]}"
+    "${currentFix.codePatterns[1]}"
+    # Patterns specific to the fix that was applied
+)
+for pattern in "${FIX_PATTERNS[@]}"; do
+    if grep -r "$pattern" ${currentFix.filesModified}; then
+        echo "❌ FAIL: Fix code still present: $pattern"
+        ROLLBACK_CLEAN=false
+    fi
+done
+
+# Check 2: Instrumentation markers MUST be present
+echo "Checking instrumentation preservation..."
+MARKERS_FOUND=0
+MARKERS_EXPECTED=${session.instrumentation.markerCount}
+
+for file in ${session.instrumentation.files.join(' ')}; do
+    FILE_MARKERS=$(grep -c "DEBUG_HYP_" "$file" || echo 0)
+    MARKERS_FOUND=$((MARKERS_FOUND + FILE_MARKERS))
+
+    # Check for matching START/END pairs
+    STARTS=$(grep -c "DEBUG_HYP_.*_START" "$file" || echo 0)
+    ENDS=$(grep -c "DEBUG_HYP_.*_END" "$file" || echo 0)
+
+    if [ "$STARTS" -ne "$ENDS" ]; then
+        echo "❌ FAIL: Unbalanced markers in $file (START: $STARTS, END: $ENDS)"
+    else
+        echo "✅ Balanced markers in $file"
+    fi
+done
+
+if [ "$MARKERS_FOUND" -ge "$MARKERS_EXPECTED" ]; then
+    echo "✅ Instrumentation preserved: $MARKERS_FOUND markers found"
+else
+    echo "❌ FAIL: Instrumentation missing: $MARKERS_FOUND/$MARKERS_EXPECTED markers"
+fi
+
+# Check 3: Code compiles/runs
+echo "Checking code integrity..."
+${session.buildCommand || 'echo "No build command configured"'}
+
+echo "=== Verification Complete ==="
+```
+
+**Integrity Check Structure:**
+
+```json
+{
+  "rollbackIntegrity": {
+    "timestamp": "${new Date().toISOString()}",
+    "fixRemoved": true,
+    "fixPatternsChecked": [ ... ],
+    "instrumentationPreserved": true,
+    "markersFound": 24,
+    "markersExpected": 24,
+    "markerBalance": {
+      "starts": 12,
+      "ends": 12,
+      "balanced": true
+    },
+    "codeCompiles": true,
+    "testsExecutable": true,
+    "integrityPassed": true
+  }
+}
+```
+
+---
+
+### Step 7: Return to Hypothesis Generation with Failure Context
+
+**When**: Rollback complete and verified
+
+**Action**: Update session with failure context and return to hypothesis generation
+
+**Failure Context Template:**
+
+```json
+{
+  "failedFix": {
+    "fixId": "${currentFix.fixId}",
+    "hypothesisId": "${currentFix.basedOnHypothesis}",
+    "approach": "${currentFix.approach}",
+    "filesModified": [ ... ],
+    "verificationResult": {
+      "outcome": "failed|regression|partial",
+      "reasoning": "Detailed explanation of why fix failed",
+      "evidence": { ... }
+    },
+    "verificationLogs": "logs/verification/verification-${currentFix.fixId}.log",
+    "rollbackCommit": "${rollbackCommitSha}",
+    "lessonLearned": "What this failed attempt teaches us about the root cause"
+  }
+}
+```
+
+**Hypothesis Generation Context Injection:**
+
+```
+Failed Fix Context for Next Hypothesis Generation:
+
+PREVIOUS FIX ATTEMPT:
+- Fix ID: ${failedFix.fixId}
+- Hypothesis Addressed: ${failedFix.hypothesisId}
+- Approach Used: ${failedFix.approach}
+- Outcome: ${failedFix.verificationResult.outcome}
+
+WHY FIX FAILED:
+${failedFix.verificationResult.reasoning}
+
+VERIFICATION EVIDENCE:
+- Exit code: ${verificationResult.evidence.exitCode}
+- Error still present: ${verificationResult.evidence.errorPresent}
+- Observed behavior: ${verificationResult.evidence.observedBehavior}
+
+LESSON LEARNED:
+${failedFix.lessonLearned}
+
+IMPLICATIONS FOR NEXT HYPOTHESIS:
+- The ${failedFix.approach} approach does NOT address the root cause
+- Instrumentation logs show: ${keyInsightsFromVerificationLogs}
+- Consider alternative hypotheses that account for:
+  - ${alternativeDirection1}
+  - ${alternativeDirection2}
+
+INSTRUMENTATION STATE:
+- All DEBUG markers preserved
+- Can re-run reproduction immediately
+- Ready for new hypothesis testing
+```
+
+**Session Update for Failure:**
+
+```json
+{
+  "status": "iterating",
+  "iterationCount": "${session.iterationCount + 1}",
+  "fixesAttempted": [
+    ...session.fixesAttempted,
+    {
+      "fixId": "${currentFix.fixId}",
+      "hypothesisId": "${currentFix.basedOnHypothesis}",
+      "approach": "${currentFix.approach}",
+      "verificationOutcome": "failed",
+      "reasoning": "${verificationResult.reasoning}",
+      "rollbackCommit": "${rollbackCommitSha}",
+      "timestamp": "${new Date().toISOString()}"
+    }
+  ],
+  "currentFix": null,
+  "hypotheses": [
+    ...session.hypotheses.map(h =>
+      h.id === currentFix.basedOnHypothesis
+        ? { ...h, status: 'fix_failed', fixAttempted: currentFix.fixId }
+        : h
+    )
+  ]
+}
+```
+
+---
+
+### Step 8: Check Iteration Limit After Failed Verification
+
+**When**: Returning to hypothesis generation
+
+**Action**: Verify iteration count before generating new hypotheses
+
+**Iteration Check Template:**
+
+```
+Iteration Check After Failed Verification:
+
+Current Iteration: ${session.iterationCount}
+Maximum Iterations: ${session.maxIterations} (default: 5)
+Remaining Iterations: ${session.maxIterations - session.iterationCount}
+
+IF iterationCount >= maxIterations:
+  → STOP: Maximum iterations reached
+  → Trigger: Complete Rollback and Failure Summary
+  → Do NOT generate new hypotheses
+
+IF iterationCount < maxIterations:
+  → CONTINUE: Generate new hypotheses
+  → Use failed fix context to inform new hypotheses
+  → Instrumentation preserved - ready for new iteration
+```
+
+**Routing Decision:**
+
+```
+Post-Verification-Failure Routing:
+
+CHECK: session.iterationCount >= session.maxIterations ?
+
+YES → Route to: Rollback and Failure Handling Phase
+      - Roll back ALL changes to initial commit
+      - Generate comprehensive failure summary
+      - Save failure report to FAILURE-${session.sessionId}.md
+      - Delete session file
+      - Exit with error code
+
+NO  → Route to: Hypothesis Generation Phase
+      - Inject failed fix context
+      - Generate 2-3 new hypotheses informed by failure
+      - Preserve instrumentation state
+      - Continue debugging cycle
+```
+
+---
+
+### Fix Verification Examples
+
+#### Example 1: Successful Verification (TypeScript Null Reference)
+
+**Context:**
+```json
+{
+  "currentFix": {
+    "fixId": "FIX_HYP_1_1706789400000",
+    "basedOnHypothesis": "HYP_1",
+    "approach": "null_guard_with_validation",
+    "filesModified": ["src/controllers/user.ts"],
+    "commitSha": "abc123"
+  }
+}
+```
+
+**Verification Result:**
+```
+Original Issue:
+- Exit code: 1 (test failed)
+- Error: "TypeError: Cannot read property 'id' of null"
+- Behavior: API returns 500 error
+
+After Fix:
+- Exit code: 0 (test passed)
+- Error: None
+- Behavior: API returns 400 with validation message
+
+Comparison:
+✅ Exit code: IMPROVED (1 → 0)
+✅ Error: RESOLVED (TypeError eliminated)
+✅ Behavior: CORRECT (proper validation response)
+✅ Regressions: NONE
+
+Outcome: VERIFIED
+Next: Proceed to Instrumentation Cleanup
+```
+
+#### Example 2: Failed Verification (Race Condition)
+
+**Context:**
+```json
+{
+  "currentFix": {
+    "fixId": "FIX_HYP_2_1706789500000",
+    "basedOnHypothesis": "HYP_2",
+    "approach": "mutex_lock_on_cache_access",
+    "filesModified": ["src/services/cache.py"],
+    "commitSha": "def456"
+  }
+}
+```
+
+**Verification Result:**
+```
+Original Issue:
+- Exit code: 1 (test failed intermittently)
+- Error: "KeyError: 'user_123' - cache miss during concurrent access"
+- Behavior: Cache returns stale/missing data
+
+After Fix:
+- Exit code: 1 (test still fails)
+- Error: "KeyError: 'user_123' - cache miss during concurrent access"
+- Behavior: Same issue persists
+
+Comparison:
+❌ Exit code: UNCHANGED (still 1)
+❌ Error: UNCHANGED (same KeyError)
+❌ Behavior: UNCHANGED (cache still fails)
+
+Outcome: FAILED
+Reasoning: Mutex lock was added but race condition occurs BEFORE cache access,
+           during the user lookup phase. The hypothesis targeted the wrong location.
+
+Rollback: Reverting fix, preserving instrumentation.
+Next: Return to Hypothesis Generation with this context.
+```
+
+**Failure Context for Next Iteration:**
+```
+The mutex lock approach addressed cache access, but verification shows the race
+condition occurs during user lookup (before cache access). New hypotheses should
+investigate:
+1. User lookup service concurrency
+2. Database connection pool behavior
+3. Request queuing mechanism
+```
+
+#### Example 3: Regression Detected
+
+**Context:**
+```json
+{
+  "currentFix": {
+    "fixId": "FIX_HYP_3_1706789600000",
+    "basedOnHypothesis": "HYP_3",
+    "approach": "timeout_increase_with_retry",
+    "filesModified": ["src/api/client.go"],
+    "commitSha": "ghi789"
+  }
+}
+```
+
+**Verification Result:**
+```
+Original Issue:
+- Exit code: 1
+- Error: "context deadline exceeded"
+- Behavior: API call times out after 5 seconds
+
+After Fix:
+- Exit code: 1
+- Error: "connection refused" (NEW ERROR)
+- Behavior: API call fails immediately (no timeout)
+
+Comparison:
+⚠️ Exit code: UNCHANGED (still 1)
+❌ Original Error: NOT RESOLVED
+⚠️ New Error: REGRESSION DETECTED - "connection refused"
+❌ Behavior: WORSE (immediate failure instead of timeout)
+
+Outcome: REGRESSION
+Reasoning: The timeout increase accidentally changed connection parameters,
+           causing the client to connect to wrong port. This introduced a
+           regression without fixing the original timeout issue.
+
+Rollback: Reverting fix immediately, preserving instrumentation.
+Next: Return to Hypothesis Generation. Fix approach was fundamentally wrong.
+```
+
+---
+
+### Fix Verification Rules
+
+1. **Same reproduction method**: Always use the exact same reproduction method (automated/manual) used in initial investigation
+2. **Complete log capture**: Capture full logs including all instrumentation markers for thorough comparison
+3. **Evidence-based decisions**: Base verification outcome on concrete evidence (exit codes, error presence, marker values)
+4. **Conservative rollback**: When in doubt, rollback - incomplete fixes cause more problems than no fix
+5. **Preserve instrumentation**: NEVER remove DEBUG markers during rollback - they're needed for next iteration
+6. **Verify rollback integrity**: Always confirm instrumentation is intact after rollback
+7. **Capture failure context**: Document exactly why the fix failed to inform next hypothesis
+8. **Check iteration limits**: Always verify iteration count before returning to hypothesis generation
+9. **Flaky test awareness**: For flaky issues, verification uses the configured success count (N consecutive passes)
+10. **No partial success**: "Partial" verification means failure - either the fix completely resolves the issue or it doesn't
+
+---
+
+### Session Status Transitions
+
+**Entering Fix Verification:**
+- Required status: `fix_applied`
+- Required fields: `currentFix` with fixId, commitSha, filesModified
+
+**After Verification Success:**
+- New status: `fix_verified`
+- New fields: `verificationResult` with outcome 'verified', `verifiedFix` object
+- Next phase: Instrumentation Cleanup
+
+**After Verification Failure:**
+- New status: `iterating` (if iterations remaining) OR `max_iterations_reached`
+- New fields: `rollbackIntegrity`, failed fix added to `fixesAttempted`
+- Next phase: Hypothesis Generation (if iterations remaining) OR Rollback Handling
+
+---
+
+### Proceeding to Next Phase
+
+**After Verification SUCCESS:**
+
+1. Session updated with `verificationResult.outcome: 'verified'`
+2. Status changed to `fix_verified`
+3. **PROCEED TO: Instrumentation Cleanup Phase**
+   - Remove all DEBUG markers from all instrumented files
+   - Commit cleanup separately from fix
+   - Generate success summary
+
+**After Verification FAILURE:**
+
+1. Fix rolled back via git revert or selective checkout
+2. Rollback integrity verified (instrumentation preserved)
+3. Failed fix context captured in `fixesAttempted` array
+4. Iteration count incremented
+5. **CHECK: Iterations remaining?**
+   - YES → **PROCEED TO: Hypothesis Generation Phase** with failure context
+   - NO → **PROCEED TO: Rollback and Failure Handling Phase**
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
