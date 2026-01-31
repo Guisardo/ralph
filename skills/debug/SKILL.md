@@ -2106,6 +2106,593 @@ After multi-file expansion is complete:
 
 ---
 
+## Logging Infrastructure Review Workflow Template
+
+**Purpose:** Before adding instrumentation, assess existing logging infrastructure in affected files to avoid conflicts, maintain consistency, and ensure instrumentation is compatible with the project's logging approach.
+
+**When to Use:** After hypothesis generation and multi-file expansion, before instrumentation phase.
+
+**Critical Requirement:** NEVER add instrumentation before completing this review. Understanding existing logging prevents duplicate statements, framework conflicts, and style inconsistencies.
+
+---
+
+### Overview: Why Logging Review Matters
+
+Adding debug instrumentation without understanding existing logging infrastructure can cause:
+
+1. **Duplicate logs**: Your instrumentation might log variables already being logged
+2. **Framework conflicts**: Mixing console.log with winston/pino can break structured logging
+3. **Style inconsistencies**: Different log formats make analysis harder
+4. **Configuration issues**: Logger might be disabled in certain environments
+5. **Missing dependencies**: External-only logging (Datadog, Sentry) requires fallback approach
+
+This template systematically reviews existing logging to inform instrumentation strategy.
+
+---
+
+### Step 1: Identify Affected Files
+
+Start by gathering all files that will need instrumentation based on hypothesis tracking.
+
+**From Session File:**
+
+```bash
+# Read session to get hypothesis files
+cat .claude/debug-sessions/${SESSION_ID}.json | jq -r '.hypotheses[].allFiles[]' | sort -u > /tmp/affected_files.txt
+```
+
+**Expected Output:**
+
+```
+src/controllers/UserController.ts
+src/services/UserService.ts
+src/repositories/UserRepository.ts
+src/utils/validation.ts
+```
+
+---
+
+### Step 2: Scan for Existing Logging Statements
+
+For each affected file, scan for logging statements using language-specific patterns.
+
+**Scanning Commands by Language:**
+
+**JavaScript/TypeScript:**
+```bash
+# Scan for console methods, logger calls, and common frameworks
+grep -nE '(console\.(log|error|warn|info|debug))|(logger\.(log|error|warn|info|debug))|(winston\.)|(pino\.)|(bunyan\.)|(log4js\.)' src/controllers/UserController.ts
+```
+
+**Python:**
+```bash
+# Scan for print, logging module, and common frameworks
+grep -nE '(print\()|(logging\.(debug|info|warning|error|critical))|(logger\.(debug|info|warning|error|critical))|(loguru\.)' src/services/user_service.py
+```
+
+**Go:**
+```bash
+# Scan for fmt.Print, log package, and common frameworks
+grep -nE '(fmt\.Print)|(log\.(Print|Fatal|Panic))|(logrus\.)|(zap\.)|(zerolog\.)' internal/user/service.go
+```
+
+**Java/Kotlin:**
+```bash
+# Scan for System.out, Log4j, SLF4J, and common frameworks
+grep -nE '(System\.out\.)|(System\.err\.)|(log\.(debug|info|warn|error))|(logger\.(debug|info|warn|error))|(Log\.(d|i|w|e))' src/main/java/UserService.java
+```
+
+**Ruby:**
+```bash
+# Scan for puts, Rails logger, and common frameworks
+grep -nE '(puts )|(p )|(pp )|(Rails\.logger\.)|(logger\.(debug|info|warn|error))' app/services/user_service.rb
+```
+
+**PHP:**
+```bash
+# Scan for echo, error_log, Monolog, and common frameworks
+grep -nE '(echo )|(print )|(var_dump)|(error_log)|(\\Log::)|(->log\()' src/Services/UserService.php
+```
+
+**C/C++:**
+```bash
+# Scan for printf, cout, and common frameworks
+grep -nE '(printf)|(fprintf)|(std::cout)|(std::cerr)|(LOG\()|(spdlog::)' src/user_service.cpp
+```
+
+**Example Output:**
+
+```
+src/controllers/UserController.ts:23:    logger.info('Creating user', { email: user.email });
+src/controllers/UserController.ts:45:    logger.error('User creation failed', { error: err.message });
+src/services/UserService.ts:67:    logger.debug('Validating user data', { userId: user.id });
+```
+
+---
+
+### Step 3: Identify Logging Framework
+
+Based on scan results, identify which logging framework(s) are in use.
+
+**Framework Detection Logic:**
+
+1. **Check imports/requires at top of file:**
+   ```bash
+   # JavaScript/TypeScript
+   grep -E '^import.*from.*["\']' src/controllers/UserController.ts | grep -iE '(winston|pino|bunyan|log4js)'
+
+   # Python
+   grep -E '^import |^from ' src/services/user_service.py | grep -iE '(logging|loguru)'
+
+   # Go
+   grep -E '^import ' internal/user/service.go | grep -iE '(logrus|zap|zerolog)'
+   ```
+
+2. **Analyze logging statement patterns:**
+   - `console.log` → Console (JavaScript/TypeScript)
+   - `logger.info()` with structured data → Likely winston/pino (JavaScript)
+   - `logging.getLogger(__name__)` → Python logging module
+   - `print()` → Python print (no framework)
+   - `fmt.Println` → Go fmt package (no framework)
+   - `log.Logger` → Go log package
+   - `System.out.println` → Java System.out (no framework)
+   - `Rails.logger` → Ruby on Rails logger
+
+3. **Check for logger initialization:**
+   ```bash
+   # Look for logger creation/configuration
+   grep -nE '(winston\.createLogger|pino\(|new Logger|logging\.basicConfig|logrus\.New)' src/**/*.{ts,js,py,go,java}
+   ```
+
+**Framework Identification Table:**
+
+| Pattern Found | Framework | Import Pattern | Logger Instantiation |
+|--------------|-----------|----------------|---------------------|
+| `logger.info({...})` | Winston (JS) | `import winston from 'winston'` | `winston.createLogger({...})` |
+| `logger.info({...})` | Pino (JS) | `import pino from 'pino'` | `pino({...})` |
+| `logging.info(...)` | Python logging | `import logging` | `logging.basicConfig(...)` |
+| `logger.info(...)` | Loguru (Python) | `from loguru import logger` | N/A (auto-configured) |
+| `log.Info(...)` | Logrus (Go) | `"github.com/sirupsen/logrus"` | `logrus.New()` |
+| `logger.Info(...)` | Zap (Go) | `"go.uber.org/zap"` | `zap.NewProduction()` |
+| `Logger.getLogger(...).info(...)` | Log4j (Java) | `import org.apache.log4j.Logger` | `Logger.getLogger(...)` |
+| `logger.info(...)` | SLF4J (Java) | `import org.slf4j.Logger` | `LoggerFactory.getLogger(...)` |
+| `Rails.logger.info(...)` | Rails logger (Ruby) | N/A (built-in) | N/A (auto-configured) |
+| `console.log(...)` | Console (JS/TS) | N/A (built-in) | N/A (built-in) |
+| `print(...)` | Print (Python) | N/A (built-in) | N/A (built-in) |
+| `fmt.Println(...)` | Fmt (Go) | `"fmt"` | N/A (built-in) |
+
+**Framework Identification Example:**
+
+```typescript
+// File: src/controllers/UserController.ts
+import winston from 'winston';  // ← Winston framework detected
+
+const logger = winston.createLogger({  // ← Logger initialization found
+  level: 'info',
+  format: winston.format.json(),
+  transports: [new winston.transports.Console()]
+});
+
+// Logging statements
+logger.info('Creating user', { email: user.email });  // ← Structured logging pattern
+logger.error('User creation failed', { error: err.message });
+```
+
+**Conclusion:** Framework is **Winston** with structured JSON logging.
+
+---
+
+### Step 4: Report Current Logging Coverage
+
+Analyze what is ALREADY being logged in the affected code paths to avoid duplication.
+
+**Coverage Analysis Template:**
+
+For each hypothesis and its affected files, document:
+
+1. **File Path**
+2. **Logging Statements Found** (line numbers)
+3. **What Variables Are Already Logged**
+4. **Logging Level Used** (debug, info, warn, error)
+5. **Gaps Identified** (what's NOT being logged but is needed for hypothesis testing)
+
+**Example Coverage Report:**
+
+```markdown
+### Logging Coverage Report
+
+**Hypothesis:** HYP_1 - Null reference error when user.email is null
+**Files Affected:** src/controllers/UserController.ts, src/services/UserService.ts
+
+---
+
+#### File: src/controllers/UserController.ts
+
+**Existing Logging:**
+
+| Line | Statement | Variables Logged | Level | Context |
+|------|-----------|------------------|-------|---------|
+| 23 | `logger.info('Creating user', ...)` | `email` | info | Entry point |
+| 45 | `logger.error('User creation failed', ...)` | `error.message` | error | Error handler |
+
+**Variables Already Logged:** `user.email`, `error.message`
+
+**Gaps Identified:**
+- Line 30: Need to log `user` object before validation (not currently logged)
+- Line 35: Need to log result of `validateUser()` call (not currently logged)
+- Line 40: Need to log `req.body` if validation fails (not currently logged)
+
+---
+
+#### File: src/services/UserService.ts
+
+**Existing Logging:**
+
+| Line | Statement | Variables Logged | Level | Context |
+|------|-----------|------------------|-------|---------|
+| 67 | `logger.debug('Validating user data', ...)` | `userId` | debug | Validation entry |
+
+**Variables Already Logged:** `user.id`
+
+**Gaps Identified:**
+- Line 70: Need to log `user.email` before null check (not currently logged) ← **Critical for hypothesis**
+- Line 75: Need to log execution path when email is null (not currently logged)
+- Line 80: Need to log `validationResult` object (not currently logged)
+
+---
+
+**Coverage Summary:**
+
+- Total logging statements: 3
+- Files with logging: 2/2 (100%)
+- Critical gaps: 5 locations need instrumentation
+- Hypothesis-critical gaps: 2 (lines 70, 75 in UserService.ts)
+```
+
+**Coverage Analysis Rules:**
+
+1. **Focus on hypothesis variables**: Prioritize logging gaps for variables mentioned in `variablesToInspect`
+2. **Identify execution path gaps**: Look for branches/conditions that aren't logged
+3. **Note timing-sensitive locations**: For race conditions, identify where timing data is missing
+4. **Flag error handling gaps**: Ensure all catch blocks and error paths have logging
+
+---
+
+### Step 5: Detect External-Only Logging
+
+Some projects use external logging services (Datadog, Sentry, New Relic) without local logging. Detect this scenario.
+
+**External Logging Detection:**
+
+1. **Scan for external logging integrations:**
+   ```bash
+   # Check package.json / requirements.txt / go.mod for external logging packages
+   grep -iE '(@datadog|dd-trace|@sentry|sentry-sdk|newrelic|elastic-apm)' package.json
+   grep -iE '(datadog|sentry-sdk|newrelic|elastic-apm)' requirements.txt
+   grep -iE '(datadog|sentry|newrelic|elastic)' go.mod
+   ```
+
+2. **Scan for external logging initialization:**
+   ```bash
+   # JavaScript/TypeScript
+   grep -rn 'Sentry.init\|dd-trace\|newrelic.start' src/
+
+   # Python
+   grep -rn 'sentry_sdk.init\|ddtrace\|newrelic.agent.initialize' src/
+
+   # Go
+   grep -rn 'sentry.Init\|dd.Start\|newrelic.NewApplication' internal/
+   ```
+
+3. **Check if local logging is absent:**
+   ```bash
+   # If no console/logger statements found in Step 2, external-only logging likely
+   ```
+
+**External-Only Detection Logic:**
+
+```
+IF (external logging integration found) AND (no local logging statements found):
+  → External-only logging detected
+  → Plan console/print fallback for instrumentation
+ELSE:
+  → Local logging present
+  → Use existing framework for instrumentation
+```
+
+**Example Detection Result:**
+
+```markdown
+### External Logging Detection
+
+**External Integrations Found:**
+- Sentry (error tracking) - initialized in src/index.ts:12
+- Datadog APM (application monitoring) - initialized in src/index.ts:15
+
+**Local Logging Coverage:**
+- 0 console.log statements found
+- 0 logger.* statements found
+- 0 fmt.Println statements found
+
+**Conclusion:** External-only logging detected.
+
+**Instrumentation Strategy:**
+- Use `console.log()` for debug instrumentation (won't interfere with Sentry/Datadog)
+- Prefix all instrumentation logs with `[DEBUG_HYP_N]` for easy filtering
+- After debugging, remove all console.log statements (they're temporary)
+```
+
+---
+
+### Step 6: Generate Logging Infrastructure Summary
+
+Consolidate findings into a structured summary that informs instrumentation decisions.
+
+**Summary Template:**
+
+```json
+{
+  "loggingInfrastructure": {
+    "reviewedAt": "2026-01-31T08:30:00Z",
+    "affectedFiles": [
+      "src/controllers/UserController.ts",
+      "src/services/UserService.ts"
+    ],
+    "framework": {
+      "name": "winston",
+      "version": "3.8.2",
+      "detected": true,
+      "importPattern": "import winston from 'winston'",
+      "loggerInstantiation": "winston.createLogger(...)",
+      "structuredLogging": true,
+      "logFormat": "json"
+    },
+    "existingLoggingCoverage": {
+      "totalStatements": 3,
+      "filesWithLogging": 2,
+      "filesWithoutLogging": 0,
+      "gapsIdentified": 5,
+      "hypothesisCriticalGaps": 2
+    },
+    "externalLogging": {
+      "detected": true,
+      "services": ["Sentry", "Datadog APM"],
+      "localLoggingPresent": true,
+      "fallbackRequired": false
+    },
+    "instrumentationStrategy": {
+      "useFramework": true,
+      "frameworkName": "winston",
+      "loggerVariable": "logger",
+      "logLevel": "debug",
+      "structuredFormat": true,
+      "fallbackMethod": null,
+      "markerFormat": "// DEBUG_HYP_N_START / // DEBUG_HYP_N_END",
+      "logPrefix": "[DEBUG_HYP_N]",
+      "preserveExisting": true
+    },
+    "fileSpecificNotes": [
+      {
+        "file": "src/controllers/UserController.ts",
+        "existingLogger": "logger (winston instance)",
+        "loggerImported": true,
+        "needsLoggerImport": false,
+        "existingLogLevel": "info",
+        "recommendedLogLevel": "debug",
+        "notes": "Logger already configured, use existing instance"
+      },
+      {
+        "file": "src/services/UserService.ts",
+        "existingLogger": "logger (winston instance)",
+        "loggerImported": true,
+        "needsLoggerImport": false,
+        "existingLogLevel": "debug",
+        "recommendedLogLevel": "debug",
+        "notes": "Already uses debug level, perfect for instrumentation"
+      }
+    ],
+    "instrumentationGuidelines": [
+      "Use existing winston logger instance",
+      "Add instrumentation at debug level to avoid production noise",
+      "Follow structured logging format: logger.debug('message', { key: value })",
+      "Preserve existing logging statements (do not modify)",
+      "Add marker comments around instrumentation for cleanup",
+      "Include trace ID in logs for cross-file correlation: { traceId: 'HYP_1_TRACE_...' }"
+    ]
+  }
+}
+```
+
+**Summary for External-Only Logging (Fallback Example):**
+
+```json
+{
+  "loggingInfrastructure": {
+    "framework": {
+      "name": null,
+      "detected": false
+    },
+    "externalLogging": {
+      "detected": true,
+      "services": ["Sentry"],
+      "localLoggingPresent": false,
+      "fallbackRequired": true
+    },
+    "instrumentationStrategy": {
+      "useFramework": false,
+      "frameworkName": null,
+      "fallbackMethod": "console.log",
+      "logLevel": "debug",
+      "structuredFormat": false,
+      "markerFormat": "// DEBUG_HYP_N_START / // DEBUG_HYP_N_END",
+      "logPrefix": "[DEBUG_HYP_N]",
+      "preserveExisting": true
+    },
+    "instrumentationGuidelines": [
+      "Use console.log() for temporary debug instrumentation",
+      "Prefix all logs with [DEBUG_HYP_N] for easy filtering",
+      "Use simple string format: console.log('[DEBUG_HYP_1] variableName:', variableName)",
+      "Remove all console.log statements after debugging (temporary only)",
+      "Do not modify Sentry configuration or error tracking"
+    ]
+  }
+}
+```
+
+---
+
+### Step 7: Update Session File
+
+After completing the logging infrastructure review, update the session file with findings.
+
+**Session Update Command:**
+
+```bash
+# Update session with logging infrastructure summary
+jq --argjson logging "$LOGGING_INFRASTRUCTURE_JSON" \
+  '.loggingInfrastructure = $logging | .status = "logging_reviewed"' \
+  .claude/debug-sessions/${SESSION_ID}.json > /tmp/session_update.json
+
+mv /tmp/session_update.json .claude/debug-sessions/${SESSION_ID}.json
+```
+
+**Session Schema Addition:**
+
+```typescript
+interface DebugSession {
+  // ... existing fields ...
+  loggingInfrastructure?: {
+    reviewedAt: string;
+    affectedFiles: string[];
+    framework: {
+      name: string | null;
+      version?: string;
+      detected: boolean;
+      importPattern?: string;
+      loggerInstantiation?: string;
+      structuredLogging: boolean;
+      logFormat?: string;
+    };
+    existingLoggingCoverage: {
+      totalStatements: number;
+      filesWithLogging: number;
+      filesWithoutLogging: number;
+      gapsIdentified: number;
+      hypothesisCriticalGaps: number;
+    };
+    externalLogging: {
+      detected: boolean;
+      services: string[];
+      localLoggingPresent: boolean;
+      fallbackRequired: boolean;
+    };
+    instrumentationStrategy: {
+      useFramework: boolean;
+      frameworkName: string | null;
+      loggerVariable?: string;
+      logLevel: string;
+      structuredFormat: boolean;
+      fallbackMethod: string | null;
+      markerFormat: string;
+      logPrefix: string;
+      preserveExisting: boolean;
+    };
+    fileSpecificNotes: Array<{
+      file: string;
+      existingLogger: string | null;
+      loggerImported: boolean;
+      needsLoggerImport: boolean;
+      existingLogLevel: string | null;
+      recommendedLogLevel: string;
+      notes: string;
+    }>;
+    instrumentationGuidelines: string[];
+  };
+  status: "logging_reviewed";  // ← New status
+}
+```
+
+---
+
+### Step 8: Display Summary to User (Optional)
+
+Before proceeding to instrumentation, optionally show the user a summary of findings.
+
+**User-Facing Summary Template:**
+
+```markdown
+## 📋 Logging Infrastructure Review Complete
+
+**Framework Detected:** Winston (JSON structured logging)
+
+**Existing Logging Coverage:**
+- ✅ 2 of 2 files have logging
+- 📊 3 existing log statements found
+- 🔍 5 instrumentation gaps identified (2 critical for hypothesis testing)
+
+**Instrumentation Strategy:**
+- Using existing Winston logger
+- Debug level (won't appear in production)
+- Structured format: `logger.debug('message', { data })`
+- Marker comments for cleanup: `// DEBUG_HYP_1_START`
+
+**Next Step:** Adding targeted debug instrumentation to 5 identified gaps.
+```
+
+**Fallback Strategy Summary (External-Only Logging):**
+
+```markdown
+## 📋 Logging Infrastructure Review Complete
+
+**Framework Detected:** None (external-only logging)
+
+**External Services:**
+- Sentry (error tracking)
+- Datadog APM (monitoring)
+
+**Instrumentation Strategy:**
+- Using `console.log()` for temporary debug logs
+- Prefix: `[DEBUG_HYP_1]` for filtering
+- Simple string format
+- Will be completely removed after debugging
+
+**Note:** These debug logs won't interfere with Sentry or Datadog.
+
+**Next Step:** Adding temporary console.log instrumentation.
+```
+
+---
+
+### Proceeding to Next Phase
+
+After logging infrastructure review is complete:
+
+1. **Session updated** with `loggingInfrastructure` object and status `logging_reviewed`
+2. **Instrumentation strategy defined**: Use existing framework OR fallback to console/print
+3. **Coverage gaps identified**: Know exactly where to add instrumentation
+4. **Framework compatibility ensured**: Won't conflict with existing logging
+
+**Proceed to:**
+- **Instrumentation Phase** using the strategy and guidelines from this review
+- Use `instrumentationStrategy.useFramework` to choose between framework logging or fallback
+- Use `fileSpecificNotes` to determine per-file logger setup
+- Use `instrumentationGuidelines` for consistent instrumentation style
+
+---
+
+### Logging Review Rules
+
+1. **Always review before instrumenting**: Never skip this phase
+2. **Respect existing framework**: Use the project's logging approach, don't impose a different one
+3. **Avoid duplication**: Don't log variables that are already being logged
+4. **Follow existing patterns**: Match log level, format, and style of existing logs
+5. **Plan for cleanup**: Instrumentation is temporary - ensure it can be cleanly removed
+6. **Fallback gracefully**: If no framework exists, use built-in methods (console.log, print, fmt.Println)
+7. **Document per-file strategy**: Different files might need different approaches
+8. **Prioritize hypothesis variables**: Focus instrumentation on variables mentioned in hypotheses
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
