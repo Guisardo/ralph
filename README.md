@@ -4,6 +4,12 @@
 
 Ralph is an autonomous AI agent loop that runs AI coding tools ([Amp](https://ampcode.com) or [Claude Code](https://docs.anthropic.com/en/docs/claude-code)) repeatedly until all PRD items are complete. Each iteration is a fresh instance with clean context. Memory persists via git history, `progress.txt`, and `prd.json`.
 
+Ralph includes specialized skills for the complete development lifecycle:
+- **PRD Generation**: Create detailed product requirements with the `/prd` skill
+- **PRD Review**: Validate PRDs for clarity and completeness with `/prd-reviewer`
+- **Autonomous Execution**: Convert PRDs to executable format with `/ralph`
+- **Systematic Debugging**: Diagnose and fix issues with hypothesis-driven investigation using `/debug`
+
 Based on [Geoffrey Huntley's Ralph pattern](https://ghuntley.com/ralph/).
 
 [Read my in-depth article on how I use Ralph](https://x.com/ryancarson/status/2008548371712135632)
@@ -44,6 +50,7 @@ For AMP
 cp -r skills/prd ~/.config/amp/skills/
 cp -r skills/prd-reviewer ~/.config/amp/skills/
 cp -r skills/ralph ~/.config/amp/skills/
+cp -r skills/debug ~/.config/amp/skills/
 ```
 
 For Claude Code
@@ -51,6 +58,7 @@ For Claude Code
 cp -r skills/prd ~/.claude/skills/
 cp -r skills/prd-reviewer ~/.claude/skills/
 cp -r skills/ralph ~/.claude/skills/
+cp -r skills/debug ~/.claude/skills/
 ```
 
 ### Configure Amp auto-handoff (recommended)
@@ -126,6 +134,47 @@ Ralph will:
 7. Append learnings to `progress.txt`
 8. Repeat until all stories pass or max iterations reached
 
+### 5. Debug Issues (When Needed)
+
+If you encounter bugs or unexpected behavior during development or while Ralph is running, use the debug skill:
+
+```
+/debug
+```
+
+The debug skill provides systematic, hypothesis-driven debugging with:
+
+**Key Features:**
+- **Structured Issue Intake**: Guided collection of reproduction steps, error messages, and environment context
+- **Hypothesis Generation**: Automatically generates testable hypotheses based on symptoms and codebase analysis
+- **Language-Adaptive Instrumentation**: Intelligently adds logging to Python, TypeScript, JavaScript, Java, and Kotlin code using AST analysis
+- **Automated Workflows**:
+  - Issue reproduction and verification
+  - Flaky test handling with statistical analysis
+  - Log pattern detection and analysis
+  - Web research for known issues
+  - Fix application with verification
+  - Automated instrumentation cleanup
+- **Session Persistence**: Maintains debugging state across context resets with checkpoint-based restoration
+
+**When to use:**
+- Runtime errors (crashes, exceptions, null references)
+- Logic bugs (incorrect behavior, wrong output)
+- Intermittent/flaky issues (works sometimes, fails others)
+- Performance issues (slowness, timeouts, resource leaks)
+- Cross-service integration problems
+
+**Workflow:**
+1. Invoke `/debug`
+2. Answer structured intake questions (issue type, reproduction steps, expected vs actual behavior)
+3. The skill generates hypotheses and instruments code with logging
+4. Run your application to collect evidence
+5. The skill analyzes logs and refines hypotheses
+6. A fix is proposed, applied, and verified
+7. Instrumentation is automatically cleaned up
+
+The debug skill uses marker-based logging (`RALPH_DEBUG_MARKER_START` / `_END`) for complete cleanup after debugging is finished, ensuring no debug code remains in your codebase.
+
 ## Reasoning Levels
 
 Ralph supports per-story model selection via the `reasoningLevel` field in prd.json:
@@ -173,6 +222,7 @@ When using the `/ralph` skill to convert a PRD to prd.json, it will guide you in
 | `skills/prd/` | Skill for generating PRDs |
 | `skills/prd-reviewer/` | Skill for reviewing PRDs (validates clarity, sizing, and Ralph readiness) |
 | `skills/ralph/` | Skill for converting PRDs to JSON |
+| `skills/debug/` | Skill for systematic debugging with hypothesis-driven investigation and automated instrumentation |
 | `skills/sync-jira/` | Skill for pushing PRDs to Jira (creates epic and story tickets) |
 | `skills/cancel-jira/` | Skill for cancelling all Jira tickets when abandoning a PRD |
 | `flowchart/` | Interactive visualization of how Ralph works |
@@ -249,6 +299,8 @@ When all stories have `passes: true`, Ralph outputs `<promise>COMPLETE</promise>
 
 ## Debugging
 
+### Debugging Ralph Execution
+
 Check current state:
 
 ```bash
@@ -261,6 +313,24 @@ cat progress.txt
 # Check git history
 git log --oneline -10
 ```
+
+### Debugging Code Issues
+
+For systematic debugging of runtime errors, logic bugs, or unexpected behavior in your codebase, use the **debug skill**:
+
+```
+/debug
+```
+
+The debug skill provides:
+- Structured issue intake with guided questions
+- Hypothesis-driven investigation with automated instrumentation
+- Language-adaptive logging for Python, TypeScript, JavaScript, Java, and Kotlin
+- Log analysis and pattern detection
+- Fix application with verification
+- Automatic cleanup of debug instrumentation
+
+See the [Debug Issues section](#5-debug-issues-when-needed) for detailed usage instructions.
 
 ## Customizing the Prompt
 
