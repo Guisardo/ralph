@@ -10702,3 +10702,585 @@ Check: iterationCount >= 5?
 
 ---
 
+## Skill Documentation and Usage Guide
+
+### Quick Start
+
+**Invoke the debug skill:**
+```
+/debug
+```
+
+or use natural language triggers:
+```
+debug this
+help debug
+fix this bug
+```
+
+**The skill will guide you through:**
+1. Describe your issue
+2. Gather reproduction information
+3. Generate hypotheses about root cause
+4. Instrument code with targeted logging
+5. Reproduce issue and analyze logs
+6. Research best practices
+7. Apply researched fix
+8. Verify fix works
+9. Clean up instrumentation
+10. Generate success summary
+
+---
+
+### When to Use the Debug Skill
+
+**Best for:**
+- ✓ Unexpected runtime errors (crashes, exceptions)
+- ✓ Logic bugs (wrong output, incorrect behavior)
+- ✓ Intermittent/flaky issues (sometimes works, sometimes fails)
+- ✓ Performance problems (timeouts, slowness)
+- ✓ Cross-service issues (API failures, distributed system problems)
+- ✓ Issues reproducible in code (not environment-specific anomalies)
+
+**Not ideal for:**
+- ✗ Environment-specific issues without code reproduction
+- ✗ Issues requiring hardware/infrastructure changes
+- ✗ Issues with no clear reproduction path
+- ✗ Third-party service outages (e.g., API service down)
+
+---
+
+### Workflow Overview
+
+The debug skill follows a **15-phase systematic workflow**:
+
+| Phase | Purpose | Input | Output |
+|-------|---------|-------|--------|
+| 1. Intake | Gather issue details | User description | Session file created |
+| 2. Session Persistence | Capture initial state | Initial commit | Session initialized |
+| 3. Hypothesis Generation | Identify potential causes | Error patterns | 3-5 ranked hypotheses |
+| 4. Multi-File Tracking | Expand to related files | Imports/dependencies | Files with line ranges |
+| 5. Logging Review | Check existing logging | Source code scan | Instrumentation strategy |
+| 6. Instrumentation | Add targeted logging | Hypotheses + code | Instrumented files |
+| 7. Issue Reproduction | Trigger issue | Automated/manual | Logs with markers |
+| 8. Flaky Handling | Verify intermittent issues | Test N times | Pass/fail pattern |
+| 9. Log Analysis | Confirm/reject hypotheses | Logs + markers | Hypothesis verdicts |
+| 10. Web Research | Find best practices | Confirmed hypothesis | Research findings |
+| 11. Fix Application | Implement solution | Research findings | Fixed code |
+| 12. Fix Verification | Test the fix | Test execution | Pass/fail result |
+| 13. Cleanup | Remove instrumentation | Marker locations | Clean code |
+| 14. Success Summary | Document solution | All session data | Summary MD |
+| 15. Rollback (if needed) | Revert on failure | Max iterations | Failure summary |
+
+---
+
+### Usage Examples
+
+#### Example 1: Runtime Error (Most Common)
+
+**Your Issue:**
+```
+Error in production: "Cannot read property 'id' of null"
+Happening at random in user authentication endpoint
+Stack trace points to src/services/user.ts line 45
+```
+
+**Invoke Debug Skill:**
+```
+/debug
+
+# Answer prompts:
+# Issue type: Runtime Error
+# Reproduction: Describe exact steps (or "happens randomly under load")
+# Environment: production with high concurrent load
+# Is it flaky: yes, happens ~5% of the time
+```
+
+**Workflow:**
+1. Intake: Captures error details, detects flaky issue
+2. Hypotheses: Generates 3-5 theories (null reference, race condition, etc.)
+3. Instrumentation: Adds logging to track async operations and variable states
+4. Reproduction: Runs automated test 50+ times or guides manual testing
+5. Analysis: Logs show race condition - user initialization wasn't awaited
+6. Research: Finds async/await best practices
+7. Fix: Adds `await` to initialization
+8. Verification: 5 consecutive successful runs
+9. Cleanup: Removes instrumentation
+10. Summary: Documents root cause and solution
+
+**Result:** ✓ Bug fixed with confidence
+
+---
+
+#### Example 2: Logic Bug (Wrong Behavior)
+
+**Your Issue:**
+```
+User discounts not calculating correctly
+Expected: 20% discount on purchase
+Actual: No discount applied, wrong calculation
+
+Affects 10% of orders in the last 24 hours
+```
+
+**Invoke Debug Skill:**
+```
+/debug
+
+# Answer prompts:
+# Issue type: Logic Bug
+# Reproduction: Specific order data that fails
+# Is it consistent: yes, same order data always fails
+```
+
+**Workflow:**
+1. Intake: Captures business logic details
+2. Hypotheses: Wrong formula, missing field, type conversion error
+3. Instrumentation: Adds logging for discount calculation inputs and outputs
+4. Reproduction: Runs test with failing order data
+5. Analysis: Logs show discount value correct but not applied to total
+6. Research: Finds best practice for discount application patterns
+7. Fix: Updates calculation to properly apply discount
+8. Verification: Test passes with expected 20% reduction
+9. Cleanup: Removes instrumentation
+10. Summary: Shows before/after calculations
+
+**Result:** ✓ Logic corrected with test coverage added
+
+---
+
+#### Example 3: Intermittent Issue (Flaky Test)
+
+**Your Issue:**
+```
+Test "user creation" passes 90% of the time, fails 10%
+No clear pattern - sometimes passes 10x in a row, sometimes fails 3x
+Blocks CI/CD pipeline
+```
+
+**Invoke Debug Skill:**
+```
+/debug
+
+# Answer prompts:
+# Issue type: Intermittent/Flaky Issue
+# Reproduction: Run test multiple times
+# Success count for verification: 5 (will verify with 5 consecutive passes)
+# Is it flaky: yes
+```
+
+**Workflow:**
+1. Intake: Detects flaky keywords, sets 5-pass verification requirement
+2. Hypotheses: Race condition, timing-dependent state, shared test resources
+3. Instrumentation: Adds timing markers and state snapshots
+4. Reproduction: Runs test 50+ times, captures logs each time
+5. Analysis: Finds race condition in database setup between tests
+6. Research: Finds test isolation best practices
+7. Fix: Adds proper test teardown and serialization
+8. Verification: Runs 50 times, all pass (no failures in sequence)
+9. Cleanup: Removes instrumentation
+10. Summary: Documents race condition and solution
+
+**Result:** ✓ Flaky test stabilized and becomes reliable
+
+---
+
+#### Example 4: Cross-Service Issue
+
+**Your Issue:**
+```
+API timeout after 5 minutes
+Affects requests > 10MB
+Happens during peak traffic
+Related service also timing out
+```
+
+**Invoke Debug Skill:**
+```
+/debug
+
+# Answer prompts:
+# Issue type: Cross-Service/Integration Issue
+# Reproduction: Large file upload during peak hours
+# Services involved: API, Database, External service
+```
+
+**Workflow:**
+1. Intake: Captures cross-service context
+2. Multi-File: Identifies files in API controller, database layer, external service client
+3. Hypotheses: Database connection pool exhausted, upstream service timeout, request buffering issue
+4. Instrumentation: Adds markers in each service layer to trace request flow
+5. Reproduction: Runs load test with large files
+6. Analysis: Finds database pool exhaustion is bottleneck
+7. Research: Finds connection pooling best practices
+8. Fix: Increases pool size and adds connection timeout handling
+9. Verification: Load test passes with large concurrent requests
+10. Cleanup: Removes instrumentation
+11. Summary: Documents end-to-end flow and fix
+
+**Result:** ✓ Cross-service bottleneck identified and resolved
+
+---
+
+### Understanding Flaky Issue Handling
+
+**What is a flaky/intermittent issue?**
+- Issue that occurs sometimes but not consistently
+- May pass on first attempt, fail on second
+- Occurs randomly under certain conditions (load, timing)
+
+**How the skill handles flaky issues:**
+
+1. **Detection:** Automatic keyword scanning in issue description
+   - Keywords: "flaky", "intermittent", "sometimes", "randomly", "occasionally", "race condition"
+
+2. **Configuration:** Prompts for success count
+   - Default: 1 (deterministic issues)
+   - Flaky issues: 5 consecutive passes required for verification
+
+3. **Verification Process:**
+   - Runs test up to 50 times
+   - Tracks consecutive passes (resets to 0 on any failure)
+   - Succeeds when 5 consecutive passes achieved
+   - Provides run history and pattern analysis
+
+4. **Pattern Analysis:** After running
+   - Success rate: What percentage of runs pass?
+   - Failure clusters: Do failures group together?
+   - Consecutive streaks: What's longest pass streak?
+
+**Example flaky issue verification:**
+
+```
+Flaky Test Verification Progress:
+Run  1: ✓ PASS  (consecutive: 1/5)
+Run  2: ✓ PASS  (consecutive: 2/5)
+Run  3: ✗ FAIL  (consecutive: 0/5) - Reset counter
+Run  4: ✓ PASS  (consecutive: 1/5)
+Run  5: ✓ PASS  (consecutive: 2/5)
+...
+Run 47: ✓ PASS  (consecutive: 4/5)
+Run 48: ✓ PASS  (consecutive: 5/5) ✓ VERIFIED
+
+Success rate: 94% (45/48 passed)
+Failure clustering: Failures scattered, not grouped
+Conclusion: Issue resolved (was race condition)
+```
+
+---
+
+### Session Persistence and Resume
+
+**What is session persistence?**
+- Debug session saved to `.claude/debug-sessions/[session-id].json`
+- If interrupted, you can resume with all progress saved
+- Preserves all hypotheses, logs, and context
+
+**How to resume a session:**
+
+If you interrupt debugging and want to continue:
+```
+/debug --resume [session-id]
+
+# Or if you know the directory:
+/debug --resume sess_1704067800_a1b2c3d4
+```
+
+**What's preserved in saved session:**
+- All hypotheses and their verdicts
+- All instrumentation markers
+- Reproduction logs
+- Research findings
+- Fix attempts and results
+- Iteration count and history
+
+**What happens to sessions:**
+- **On success:** Deleted after user confirms (summary kept)
+- **On failure:** Kept for manual review, failure summary saved
+- **On rollback:** Failure summary saved, session deleted
+
+---
+
+### Automated vs Manual Reproduction
+
+The skill automatically decides whether to use automated testing or manual reproduction.
+
+**Automated Reproduction (Preferred):**
+- Requires: Existing test suite
+- Files involved: Backend logic, APIs, databases
+- Success criteria: Clear pass/fail signals
+
+**Manual Reproduction (When needed):**
+- UI interactions required
+- External service dependencies
+- Timing-sensitive behavior
+- No test automation available
+
+**Decision criteria:**
+
+| Aspect | Automatable | Not Automatable |
+|--------|------------|-----------------|
+| Test infrastructure | Jest, pytest, go test | None exists |
+| Code paths | Pure functions, services | UI flows, external APIs |
+| Inputs/Outputs | Clear inputs, testable outputs | User interactions |
+| Dependencies | Mockable, isolated | Real external services |
+| Isolation | Can isolate in test | Requires real environment |
+
+---
+
+### Understanding When to Use Automated vs Manual
+
+**Choose Automated If:**
+- You have a test suite (Jest, pytest, RSpec, etc.)
+- Issue is reproducible with code (API call, function execution)
+- Test environment is stable and isolated
+
+**Choose Manual If:**
+- No test infrastructure exists
+- Issue requires UI interaction (clicking, typing)
+- Issue requires specific timing or environment setup
+- External service calls involved
+
+**Manual reproduction example:**
+```
+Issue: Upload button doesn't work on mobile
+
+Manual Script:
+1. Navigate to /upload page on mobile device
+2. Click "Choose File" button
+3. Select image file (> 5MB)
+4. Click "Upload"
+5. Observe: Does progress appear? Any error message?
+
+Expected: "Upload complete" message within 30 seconds
+Actual: Button grayed out for 60+ seconds, then error
+```
+
+---
+
+### Troubleshooting Common Issues
+
+#### "Debug session taking too long"
+
+**Why:** Complex issue, many hypotheses, multiple iterations
+
+**What to do:**
+- Check iteration count: `jq '.iterationCount' .claude/debug-sessions/[session-id].json`
+- If >= 4: Plan to wrap up or get manual input
+- 30-minute timeout: Will trigger rollback and provide failure summary with recommendations
+
+**Prevent:** Start with clear, focused reproduction steps
+
+#### "Fix didn't work after verification"
+
+**Why:** Verification was not comprehensive or fix had edge case
+
+**What to do:**
+- Skill will detect failure and return to hypothesis generation
+- Review failed fix approach in logs
+- Allow skill to iterate with different hypothesis
+- Or manually inspect failure details in session file
+
+**Prevent:** If flaky, ensure 5 consecutive passes not just 1
+
+#### "Getting worse error after fix"
+
+**Why:** Fix introduced regression, new code path broken
+
+**What to do:**
+- Skill detects this as regression failure
+- Automatically rolls back the failed fix
+- Returns to hypothesis generation with failure context
+- Suggests different approach based on new error
+
+**Prevent:** Ensure fix is complete and addresses root cause
+
+#### "Instrumentation markers left behind"
+
+**Why:** Rollback failed, cleanup didn't complete properly
+
+**What to do:**
+```bash
+# Manual cleanup
+grep -r "DEBUG_HYP_" --include="*.ts" --include="*.js" .
+# Manually remove the marker blocks
+```
+
+**Prevent:** Rare - skilled designed to be fail-safe
+
+#### "Session file corrupted"
+
+**Why:** Interrupted write, file system issue
+
+**What to do:**
+- Session file at: `.claude/debug-sessions/[session-id].json`
+- Check validity: `jq . .claude/debug-sessions/[session-id].json`
+- If corrupted, delete and start fresh: `rm .claude/debug-sessions/[session-id].json`
+
+**Prevent:** Don't manually edit session files
+
+---
+
+### Skill Capabilities and Limitations
+
+**What the Skill CAN Do:**
+- ✓ Debug runtime errors, logic bugs, intermittent issues
+- ✓ Multi-language support (JS, TS, Python, Go, Java, Ruby, PHP, C/C++)
+- ✓ Add instrumentation without breaking code
+- ✓ Generate hypotheses from error patterns
+- ✓ Research best practices automatically
+- ✓ Apply researched fixes
+- ✓ Verify fixes work
+- ✓ Clean up instrumentation automatically
+- ✓ Generate comprehensive summaries
+
+**What the Skill CANNOT Do:**
+- ✗ Fix environment-specific issues (deploy config, missing deps)
+- ✗ Handle issues with no code reproduction path
+- ✗ Diagnose infrastructure issues (network, hardware)
+- ✗ Fix third-party service outages
+- ✗ Handle permission-denied errors in restricted environments
+- ✗ Debug issues in interpreted languages without test infrastructure
+- ✗ Diagnose GUI/UI layout issues (only functional bugs)
+
+**Limitations:**
+- Max 5 iterations before rollback and failure summary
+- 30-minute timeout to prevent infinite loops
+- Requires at least one confirmed hypothesis to apply fix
+- Research limited to public documentation (no private knowledge)
+- Cannot commit to main branch, only feature branches
+
+---
+
+### Best Practices for Effective Debugging
+
+1. **Be specific in reproduction steps**
+   - Instead of: "It doesn't work"
+   - Try: "POST /api/users with payload {email: null} returns 500"
+
+2. **Include error messages and stack traces**
+   - Copy full error text
+   - Include line numbers and file names
+
+3. **Note if issue is intermittent**
+   - "Happens ~5% of the time under load"
+   - "Sometimes passes, sometimes fails"
+   - "Fails on second run but not first"
+
+4. **Provide environment context**
+   - Production vs development
+   - Concurrent load vs single request
+   - Specific data/payload that triggers issue
+
+5. **Let the skill guide you**
+   - Answer all prompts completely
+   - Provide examples when asked
+   - Trust the systematic approach
+
+6. **Trust the verification**
+   - For flaky issues: 5 consecutive passes required
+   - Means fix is truly reliable, not just lucky
+
+7. **Review the summary**
+   - Learn from the findings
+   - Understand the root cause
+   - Apply learnings to prevent future similar issues
+
+---
+
+### Advanced Features
+
+#### Custom Hypothesis (if desired)
+
+If you have a specific hypothesis to test:
+```
+During intake, when asked about potential causes:
+"I think it might be a race condition in the cache initialization,
+possibly related to concurrent requests hitting before the cache warms up"
+```
+
+The skill will:
+- Respect your input
+- Generate 2-3 related hypotheses
+- Test your theory first
+- Expand to other possibilities if yours doesn't confirm
+
+#### Manual Fix Application
+
+If you want to suggest a fix:
+```
+During fix application phase, you can suggest:
+"What if we added async/await here instead of the callback approach?"
+```
+
+The skill will:
+- Consider your suggestion
+- Compare with researched approaches
+- Apply if it matches research findings
+- Research alternative if yours conflicts with best practices
+
+#### Timeout Control (Optional)
+
+Some issues require more time:
+```
+/debug --max-time 60  # 60 minutes instead of default 30
+```
+
+The skill will:
+- Extend iteration limit (though default 5 is usually sufficient)
+- Continue up to 60 minutes
+- Provide progress updates
+
+---
+
+### File Organization
+
+After a debug session, you'll find:
+
+**In `.claude/debug-sessions/`:**
+```
+sess_1704067800_a1b2c3d4.json           # Session data (deleted after success)
+SUMMARY-sess_1704067800_a1b2c3d4.md     # Success summary (kept for reference)
+FAILURE-sess_1704067800_a1b2c3d4.md     # Failure summary (if rollback occurred)
+```
+
+**In your project (temporary):**
+```
+test/debug/reproduction-HYP_*.test.ts   # Automated reproduction test (marked DO NOT COMMIT)
+logs/reproduction-hyp-*.log             # Reproduction run logs (temporary, deleted after cleanup)
+```
+
+**Git commits made:**
+```
+[original work]
+├─ feat: [US-123] - User feature
+├─ debug: HYP_2 - Instrumentation for race condition hypothesis
+│  (commit with all logging markers)
+├─ debug: [US-123] - Fix race condition in async initialization
+│  (commit with the fix, preserving markers)
+├─ chore: [US-123] - Cleanup instrumentation markers
+│  (separate commit removing all DEBUG_HYP_ markers)
+└─ [back on your branch to continue work]
+```
+
+---
+
+### Success Stories (What to Expect)
+
+**Typical debugging session:**
+- 5-10 minutes: Fast issues with clear error patterns
+- 10-20 minutes: Issues requiring 2-3 hypothesis tests
+- 20-30 minutes: Complex issues, flaky tests, cross-service problems
+
+**Success Rate:**
+- 85%+: Issues with clear reproduction path
+- 60%+: Intermittent issues
+- 40%+: Ambiguous issues with no clear reproduction
+
+**Failure Handling:**
+- If max iterations reached: Comprehensive failure summary with recommendations
+- Failure summary guides manual investigation
+- Can retry with /debug --resume after getting more information
+
+---
+

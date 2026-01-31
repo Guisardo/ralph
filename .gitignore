@@ -1,6 +1,7 @@
 # Ralph working files (generated during runs)
 prd.json
 progress.txt
+prompt.md.tmp
 .last-branch
 
 # Per-project Jira configuration (contains project-specific keys)
@@ -17,3 +18,4 @@ progress.txt
 .claude/
 .planning/
 /.idea/
+/tasks/
