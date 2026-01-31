@@ -6208,6 +6208,744 @@ After log analysis completes:
 
 ---
 
+## Web Research Workflow Template
+
+This phase triggers immediately after a hypothesis is confirmed during log analysis. The goal is to research the confirmed issue pattern to identify current best practices, security implications, and avoid deprecated solutions before applying a fix.
+
+### When This Phase Triggers
+
+- **Input**: Confirmed hypothesis from Log Analysis Phase
+- **Status**: Session status is `hypothesis_confirmed`
+- **Trigger**: Automatic upon hypothesis confirmation (no user prompt needed)
+
+### Web Research Overview
+
+The research phase consists of 8 steps:
+
+1. **Build search queries** from confirmed hypothesis context
+2. **Execute prioritized searches** with source ranking
+3. **Filter results** by recency and relevance
+4. **Extract key findings** (approaches, security, deprecations)
+5. **Evaluate applicability** to the specific codebase
+6. **Generate research summary** with citations
+7. **Update session** with research findings
+8. **Time-box enforcement** (3-5 minutes maximum)
+
+---
+
+### Step 1: Build Search Queries
+
+Generate targeted search queries from the confirmed hypothesis context.
+
+**Query construction template:**
+
+```
+Based on the confirmed hypothesis, construct search queries that include:
+
+HYPOTHESIS CONTEXT:
+- Issue type: {hypothesis.category}
+- Error pattern: {errorMessages or key error indicators}
+- Language/Framework: {detected language and frameworks}
+- Library versions: {package.json, requirements.txt, go.mod versions}
+- Confirmed root cause: {hypothesis.description}
+
+QUERY TEMPLATES:
+1. Error-specific: "{exact error message or pattern}" + {language}
+2. Pattern-specific: {root cause description} + "best practice" + {language/framework}
+3. Fix-specific: "how to fix" + {root cause} + {language/framework}
+4. Version-specific: {library name} + {version} + {issue pattern} + "workaround"
+5. Security-specific: {issue pattern} + "security" + {language} + "vulnerability"
+
+QUERY GENERATION RULES:
+- Include exact error messages in quotes for precision
+- Add language/framework to every query
+- Include "best practice" or "recommended" in at least one query
+- Add library version for dependency-related issues
+- Include "2024" or "2025" for recency filtering
+- Generate 3-5 focused queries (not more)
+```
+
+**Example query generation:**
+
+```
+Confirmed Hypothesis: HYP_1 - Null reference due to missing user validation
+Language: TypeScript
+Framework: Express.js
+Error: "TypeError: Cannot read property 'profile' of null"
+
+Generated Queries:
+1. "TypeError Cannot read property of null" TypeScript Express
+2. null check best practice TypeScript Express.js 2024
+3. user validation middleware Express.js TypeScript
+4. optional chaining nullish coalescing TypeScript best practice
+5. Express.js request validation security
+```
+
+---
+
+### Step 2: Execute Prioritized Searches
+
+Execute searches with source prioritization strategy.
+
+**Source priority ranking:**
+
+| Priority | Source Type | Weight | Rationale |
+|----------|-------------|--------|-----------|
+| 1 | Official Documentation | 1.0 | Authoritative, maintained, accurate |
+| 2 | GitHub Issues/Discussions | 0.9 | Direct from maintainers, context-rich |
+| 3 | Stack Overflow (Accepted) | 0.8 | Community-vetted solutions |
+| 4 | Stack Overflow (High Votes) | 0.7 | Popular but verify accuracy |
+| 5 | Recent Blog Posts (< 2 years) | 0.6 | May have newer approaches |
+| 6 | Older Blog Posts (2-5 years) | 0.3 | Potentially outdated |
+| 7 | Forum Posts | 0.2 | Variable quality |
+
+**Search execution template:**
+
+```
+For each generated query, search in this order:
+
+1. OFFICIAL DOCUMENTATION SEARCH:
+   - Site-specific search: site:docs.{framework}.com OR site:{language}.org
+   - API documentation: {library} API reference
+   - Migration guides: {library} migration guide {version}
+
+2. GITHUB SEARCH:
+   - Issues: site:github.com/issues {error pattern}
+   - Discussions: site:github.com/discussions {issue pattern}
+   - Pull requests: site:github.com/pull {fix for issue}
+
+3. STACK OVERFLOW SEARCH:
+   - Tagged search: site:stackoverflow.com [{language}] [{framework}] {error}
+   - Filter: answers:1 (has accepted answer)
+   - Sort by votes
+
+4. RECENT BLOGS SEARCH:
+   - General: {query} after:2023-01-01
+   - Dev platforms: site:dev.to OR site:medium.com {query}
+
+SEARCH EXECUTION RULES:
+- Execute searches in priority order
+- Stop early if high-quality result found (Priority 1-2)
+- Collect up to 5 relevant results total
+- Note source URL and publication date for each
+```
+
+**Search result structure:**
+
+```typescript
+interface SearchResult {
+  query: string;
+  source: {
+    type: "official_docs" | "github_issue" | "stackoverflow" | "blog" | "forum";
+    url: string;
+    title: string;
+    publishedDate: string | null;
+    lastUpdated: string | null;
+  };
+  priority: number;  // 1-7 based on source type
+  relevanceScore: number;  // 0.0-1.0 based on query match
+  snippet: string;  // Key excerpt from the result
+}
+```
+
+---
+
+### Step 3: Filter Results by Recency and Relevance
+
+Apply filtering criteria to ensure results are current and applicable.
+
+**Recency filter:**
+
+```
+RECENCY RULES:
+- Prefer results from last 2 years (2023-2025)
+- Accept results from 2-5 years if:
+  - From official documentation (always current)
+  - High Stack Overflow score (>50 votes)
+  - No newer alternative found
+- Reject results older than 5 years unless:
+  - Language/framework fundamentals (unlikely to change)
+  - Linked from official docs
+
+RECENCY SCORING:
+- < 6 months: +0.3 to relevance
+- 6-12 months: +0.2 to relevance
+- 1-2 years: +0.1 to relevance
+- 2-5 years: +0.0 to relevance
+- > 5 years: -0.2 to relevance (unless exception applies)
+```
+
+**Relevance filter:**
+
+```
+RELEVANCE CRITERIA:
+- Must match confirmed hypothesis category (null reference, race condition, etc.)
+- Must apply to detected language/framework version
+- Must address root cause (not just symptoms)
+- Bonus: Addresses security implications
+- Bonus: Includes code examples
+
+RELEVANCE SCORING:
+- Exact error match: +0.3
+- Same root cause pattern: +0.2
+- Same language/framework: +0.2
+- Includes code example: +0.1
+- Addresses security: +0.1
+- Addresses testing: +0.1
+```
+
+**Filtered result validation:**
+
+```
+For each result, verify:
+
+1. VERSION COMPATIBILITY:
+   - Check if solution applies to current library versions
+   - Flag if solution requires version upgrade
+   - Note breaking changes between versions
+
+2. DEPRECATION CHECK:
+   - Look for deprecation warnings in result
+   - Check if recommended APIs still exist
+   - Verify imports/requires are current
+
+3. SECURITY REVIEW:
+   - Identify any security warnings in result
+   - Check for CVE references
+   - Note if solution introduces new vulnerabilities
+
+Result passes filter if:
+- Relevance score >= 0.5
+- No critical deprecation issues
+- No security vulnerabilities introduced
+```
+
+---
+
+### Step 4: Extract Key Findings
+
+From filtered results, extract actionable findings in structured format.
+
+**Finding extraction template:**
+
+```
+For each filtered result, extract:
+
+RECOMMENDED APPROACHES:
+- What is the recommended fix pattern?
+- Is there a library/utility that handles this?
+- What are the implementation steps?
+- Are there multiple valid approaches? If so, rank them.
+
+SECURITY IMPLICATIONS:
+- Does this issue have security implications?
+- What attack vectors does it expose?
+- Are there security-focused implementations?
+- What validation/sanitization is recommended?
+
+DEPRECATED SOLUTIONS:
+- What solutions should be avoided?
+- What APIs are deprecated?
+- What patterns are considered anti-patterns now?
+- What libraries are no longer maintained?
+
+EDGE CASES:
+- What edge cases should the fix handle?
+- Are there known limitations?
+- What error handling is recommended?
+```
+
+**Finding structure:**
+
+```typescript
+interface ResearchFinding {
+  id: string;  // "FIND_1", "FIND_2", etc.
+  category: "recommended_approach" | "security" | "deprecated" | "edge_case";
+  source: {
+    url: string;
+    type: string;
+    priority: number;
+  };
+  summary: string;  // 1-2 sentence summary
+  details: string;  // Longer explanation with context
+  codeExample?: string;  // Code snippet if applicable
+  applicability: {
+    language: string;
+    framework: string | null;
+    versionRange: string | null;  // e.g., ">=4.0.0"
+  };
+  confidence: number;  // 0.0-1.0 based on source quality and relevance
+}
+```
+
+---
+
+### Step 5: Evaluate Applicability
+
+Assess how findings apply to the specific codebase context.
+
+**Applicability evaluation template:**
+
+```
+For each finding, evaluate against codebase:
+
+CODEBASE CONTEXT:
+- Language: {detected language}
+- Framework: {detected framework with version}
+- Libraries: {relevant dependencies from package.json/requirements.txt}
+- Code patterns: {existing patterns in affected files}
+- Project constraints: {any architectural constraints}
+
+APPLICABILITY CHECKS:
+
+1. LANGUAGE COMPATIBILITY:
+   - Does finding apply to our language version?
+   - Are required language features available?
+   - Example: Optional chaining requires ES2020+
+
+2. FRAMEWORK COMPATIBILITY:
+   - Does finding apply to our framework version?
+   - Are required APIs available?
+   - Example: Express 4.x vs 5.x differences
+
+3. LIBRARY COMPATIBILITY:
+   - Do we have the required libraries?
+   - Are there version conflicts?
+   - Would this require new dependencies?
+
+4. PATTERN COMPATIBILITY:
+   - Does the fix pattern match existing code style?
+   - Can it be implemented without major refactoring?
+   - Does it align with project architecture?
+
+5. SECURITY COMPATIBILITY:
+   - Does the fix meet project security requirements?
+   - Does it require additional security measures?
+   - Are there compliance considerations?
+
+APPLICABILITY SCORING:
+- Fully applicable (no changes needed): 1.0
+- Minor adaptation needed: 0.8
+- Moderate adaptation needed: 0.6
+- Significant adaptation needed: 0.4
+- Not directly applicable: 0.2
+```
+
+**Applicability result:**
+
+```typescript
+interface ApplicabilityResult {
+  findingId: string;
+  score: number;  // 0.0-1.0
+  adaptationsNeeded: string[];  // What changes are required
+  blockers: string[];  // What prevents direct application
+  recommendation: "use_as_is" | "adapt" | "skip";
+}
+```
+
+---
+
+### Step 6: Generate Research Summary
+
+Compile findings into actionable research summary.
+
+**Research summary template:**
+
+```markdown
+## Research Summary for {hypothesis.id}
+
+### Confirmed Root Cause
+{hypothesis.description}
+
+### Research Queries Used
+1. {query1}
+2. {query2}
+3. {query3}
+
+### Sources Consulted
+| Source | Type | Priority | Relevance |
+|--------|------|----------|-----------|
+| {url1} | {type1} | {priority1} | {score1} |
+| {url2} | {type2} | {priority2} | {score2} |
+
+### Key Findings
+
+#### Recommended Approach
+{Primary recommended fix approach with rationale}
+
+**Code Example:**
+```{language}
+{code example from research}
+```
+
+**Sources:** {source citations}
+
+#### Security Considerations
+{Security implications and mitigations}
+
+**Sources:** {source citations}
+
+#### Solutions to Avoid
+{Deprecated or anti-pattern solutions}
+
+**Sources:** {source citations}
+
+### Applicability Assessment
+| Finding | Applicability | Adaptations Needed |
+|---------|---------------|-------------------|
+| {find1} | {score1} | {adaptations1} |
+| {find2} | {score2} | {adaptations2} |
+
+### Recommended Fix Strategy
+Based on research findings, the recommended approach is:
+1. {step1}
+2. {step2}
+3. {step3}
+
+**Rationale:** {why this approach was selected}
+**Sources:** {citations supporting this approach}
+
+### Time Spent
+Research completed in: {duration} (target: 3-5 minutes)
+```
+
+---
+
+### Step 7: Update Session with Research Findings
+
+Store research results in session for fix application and documentation.
+
+**Session update template:**
+
+```json
+{
+  "status": "research_complete",
+  "researchFindings": {
+    "hypothesisId": "HYP_1",
+    "researchedAt": "2025-01-31T12:00:00Z",
+    "duration": "4m 23s",
+    "queriesUsed": [
+      "TypeError Cannot read property of null TypeScript Express",
+      "null check best practice TypeScript Express.js 2024"
+    ],
+    "sourcesConsulted": [
+      {
+        "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html",
+        "type": "official_docs",
+        "priority": 1,
+        "relevanceScore": 0.95,
+        "title": "TypeScript Handbook - Narrowing"
+      }
+    ],
+    "findings": [
+      {
+        "id": "FIND_1",
+        "category": "recommended_approach",
+        "summary": "Use optional chaining and nullish coalescing for null-safe property access",
+        "details": "TypeScript 3.7+ provides optional chaining (?.) and nullish coalescing (??) operators...",
+        "codeExample": "const profile = user?.profile ?? defaultProfile;",
+        "source": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html",
+        "applicability": 1.0
+      },
+      {
+        "id": "FIND_2",
+        "category": "security",
+        "summary": "Validate user object at API boundary before accessing properties",
+        "details": "Never trust user objects from external sources without validation...",
+        "source": "https://expressjs.com/en/advanced/best-practice-security.html",
+        "applicability": 0.9
+      },
+      {
+        "id": "FIND_3",
+        "category": "deprecated",
+        "summary": "Avoid manual null checks with || operator for default values",
+        "details": "The || operator treats empty strings and 0 as falsy, use ?? instead...",
+        "source": "https://stackoverflow.com/questions/61515287",
+        "applicability": 1.0
+      }
+    ],
+    "recommendedStrategy": {
+      "approach": "Use TypeScript optional chaining with Express validation middleware",
+      "steps": [
+        "Add null check middleware before route handlers",
+        "Use optional chaining for property access in affected code",
+        "Add type guard for user object validation"
+      ],
+      "rationale": "Combines runtime validation with compile-time safety",
+      "primarySource": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html"
+    }
+  }
+}
+```
+
+**Session schema extension:**
+
+```typescript
+interface ResearchFindings {
+  hypothesisId: string;
+  researchedAt: string;
+  duration: string;
+  queriesUsed: string[];
+  sourcesConsulted: SourceReference[];
+  findings: ResearchFinding[];
+  recommendedStrategy: {
+    approach: string;
+    steps: string[];
+    rationale: string;
+    primarySource: string;
+    additionalSources: string[];
+  };
+}
+
+interface SourceReference {
+  url: string;
+  type: "official_docs" | "github_issue" | "stackoverflow" | "blog" | "forum";
+  priority: number;
+  relevanceScore: number;
+  title: string;
+  publishedDate?: string;
+  accessedAt: string;
+}
+```
+
+---
+
+### Step 8: Time-Box Enforcement
+
+Enforce 3-5 minute time limit for research phase.
+
+**Time-box rules:**
+
+```
+TIME-BOX ENFORCEMENT:
+
+1. SOFT LIMIT (3 minutes):
+   - If adequate findings collected, conclude research
+   - Generate summary with available information
+   - Note any gaps in research coverage
+
+2. HARD LIMIT (5 minutes):
+   - Stop all searches immediately
+   - Compile summary from results collected so far
+   - Mark research as "time-limited" if gaps remain
+   - Note incomplete areas for potential future research
+
+3. EARLY COMPLETION:
+   - If high-quality official documentation found, may conclude early
+   - If authoritative GitHub issue with fix found, may conclude early
+   - Minimum 1 minute research to ensure thoroughness
+
+TIME TRACKING:
+- Record start time when phase begins
+- Log each search query with timestamp
+- Track cumulative time after each search
+- Interrupt search if approaching hard limit
+```
+
+**Time-limited research handling:**
+
+```json
+{
+  "researchFindings": {
+    "duration": "5m 00s",
+    "timeLimited": true,
+    "incompleteAreas": [
+      "Security implications not fully researched",
+      "Alternative approaches not explored"
+    ],
+    "recommendation": "Proceed with available findings; consider additional research if fix is complex"
+  }
+}
+```
+
+---
+
+### Web Research Rules
+
+Follow these rules during web research:
+
+1. **Trigger immediately**: Research starts automatically after hypothesis confirmation (no user prompt)
+
+2. **Use confirmed hypothesis context**: Build queries from actual error patterns, not generic terms
+
+3. **Prioritize authoritative sources**: Official docs > GitHub > Stack Overflow > blogs
+
+4. **Verify recency**: Prefer results from last 2 years; flag outdated solutions
+
+5. **Check version compatibility**: Ensure solutions apply to current library versions
+
+6. **Identify security implications**: Always check if issue has security impact
+
+7. **Document deprecated solutions**: Explicitly note what NOT to do
+
+8. **Cite sources**: Every recommendation needs source citation
+
+9. **Evaluate applicability**: Don't blindly copy solutions; adapt to codebase context
+
+10. **Respect time box**: Complete within 3-5 minutes; partial results are acceptable
+
+11. **Handle search failures gracefully**: If searches fail, proceed with available findings
+
+12. **Update session completely**: Store all research for fix phase and documentation
+
+---
+
+### Example: Complete Web Research Workflow
+
+**Starting state:**
+```json
+{
+  "status": "hypothesis_confirmed",
+  "confirmedHypothesis": "HYP_1",
+  "hypotheses": [{
+    "id": "HYP_1",
+    "category": "null_reference",
+    "description": "User object is null when accessed before validation middleware",
+    "status": "confirmed"
+  }]
+}
+```
+
+**Step 1: Build queries:**
+```
+Queries generated:
+1. "TypeError Cannot read property profile of null" TypeScript Express
+2. Express.js user validation middleware best practice 2024
+3. TypeScript optional chaining null check pattern
+4. Express.js request validation security
+```
+
+**Step 2: Execute searches:**
+```
+Search results:
+1. TypeScript Handbook - Narrowing (official_docs, priority 1, relevance 0.95)
+2. Express.js Best Practice Security (official_docs, priority 1, relevance 0.85)
+3. GitHub: expressjs/express#4521 - Request validation middleware (github_issue, priority 2, relevance 0.80)
+4. Stack Overflow: "How to handle null user in Express" (stackoverflow, priority 3, relevance 0.75)
+```
+
+**Step 3: Filter results:**
+```
+All results pass recency filter (all < 2 years or official docs)
+All results pass relevance filter (score >= 0.5)
+No deprecation issues detected
+No security vulnerabilities introduced
+```
+
+**Step 4: Extract findings:**
+```
+FIND_1 (recommended_approach): Use optional chaining (?.) and type guards
+FIND_2 (recommended_approach): Add validation middleware before route handlers
+FIND_3 (security): Validate user objects at API boundary
+FIND_4 (deprecated): Avoid || operator for default values (use ?? instead)
+```
+
+**Step 5: Evaluate applicability:**
+```
+FIND_1: Fully applicable (TypeScript 4.x supports optional chaining)
+FIND_2: Fully applicable (Express.js 4.x middleware pattern)
+FIND_3: Fully applicable (matches project security requirements)
+FIND_4: Fully applicable (prevents subtle bugs with falsy values)
+```
+
+**Step 6: Generate summary:**
+```markdown
+## Research Summary for HYP_1
+
+### Recommended Approach
+Combine TypeScript optional chaining with Express validation middleware:
+1. Add validation middleware to check user existence before handlers
+2. Use optional chaining (?.) for defensive property access
+3. Add type guard for compile-time safety
+
+**Code Example:**
+```typescript
+// Validation middleware
+const requireUser: RequestHandler = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'User not authenticated' });
+  }
+  next();
+};
+
+// Safe property access with optional chaining
+const profile = req.user?.profile ?? defaultProfile;
+```
+
+**Sources:**
+- https://www.typescriptlang.org/docs/handbook/2/narrowing.html
+- https://expressjs.com/en/advanced/best-practice-security.html
+```
+
+**Step 7: Update session:**
+```json
+{
+  "status": "research_complete",
+  "researchFindings": {
+    "hypothesisId": "HYP_1",
+    "researchedAt": "2025-01-31T12:00:00Z",
+    "duration": "3m 45s",
+    "findings": [...],
+    "recommendedStrategy": {
+      "approach": "TypeScript optional chaining with Express validation middleware",
+      "steps": ["Add validation middleware", "Use optional chaining", "Add type guard"],
+      "rationale": "Combines runtime and compile-time safety"
+    }
+  }
+}
+```
+
+**Step 8: Time check:**
+```
+Duration: 3m 45s (within soft limit)
+Research complete: Yes
+```
+
+**Ending state:**
+```json
+{
+  "status": "research_complete",
+  "confirmedHypothesis": "HYP_1"
+}
+```
+
+**Next phase:** Proceed to Fix Application Phase
+
+---
+
+### Integration with Other Phases
+
+**From: Log Analysis Phase**
+- Input: Confirmed hypothesis with evidence
+- Input: Session with `status: hypothesis_confirmed`
+- Input: Error patterns, language, framework context
+
+**To: Fix Application Phase**
+- Output: Research findings with recommended approach
+- Output: Source citations for documentation
+- Output: Security considerations for fix implementation
+- Output: Session status `research_complete`
+
+---
+
+### Proceeding to Next Phase
+
+After web research completes:
+
+1. **Session updated** with research findings and recommended strategy
+2. **Sources documented** for fix application and summary generation
+3. **Time recorded** for audit trail
+
+**Research complete:**
+- Status: `research_complete`
+- **Proceed to:** Fix Application Phase
+
+**Research time-limited:**
+- Status: `research_complete` (with `timeLimited: true`)
+- **Proceed to:** Fix Application Phase (with incomplete research note)
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
