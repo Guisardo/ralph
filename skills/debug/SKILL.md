@@ -735,6 +735,568 @@ echo "Iteration: <iterationCount from session> of <maxIterations>"
 
 ---
 
+## Hypothesis Generation Workflow Template
+
+This template defines how to systematically generate, rank, and track hypotheses about the root cause of an issue. The goal is to produce 3-5 testable hypotheses with specific file locations, line ranges, and confidence scores for internal prioritization.
+
+### Hypothesis Generation Overview
+
+```
+1. Analyze Inputs → Review issue context, error messages, code structure
+2. Identify Patterns → Match against common failure mode categories
+3. Locate Suspects → Find specific files and line ranges
+4. Rank Hypotheses → Calculate confidence scores for prioritization
+5. Format Output → Structure hypotheses for tracking and instrumentation
+```
+
+### Step 1: Analyze Available Information
+
+**When**: After session initialization with git state captured (status = "git_captured")
+
+**Inputs to analyze**:
+
+1. **Issue Context** (from Intake Phase):
+   - `issueType`: Runtime Error, Logic Bug, Intermittent, Cross-Service, etc.
+   - `reproductionSteps`: Sequence of actions that trigger the issue
+   - `expectedBehavior`: What should happen
+   - `actualBehavior`: What actually happens
+   - `errorMessages`: Stack traces, error codes, log output
+
+2. **Code Structure** (from codebase analysis):
+   - Files mentioned in error messages/stack traces
+   - Entry points referenced in reproduction steps
+   - Related files (imports, dependencies, shared modules)
+
+3. **Environment Context**:
+   - Language/framework in use
+   - Version information
+   - Configuration that might affect behavior
+
+**Template for analysis prompt**:
+
+```
+Given the following debug session context:
+
+ISSUE TYPE: <issueType>
+
+REPRODUCTION STEPS:
+<reproductionSteps as numbered list>
+
+EXPECTED BEHAVIOR:
+<expectedBehavior>
+
+ACTUAL BEHAVIOR:
+<actualBehavior>
+
+ERROR MESSAGES:
+<errorMessages>
+
+ENVIRONMENT:
+- Language: <language>
+- Framework: <framework>
+
+Analyze this information to identify:
+1. Primary error location (file and line from stack trace)
+2. Code path leading to the error (call chain)
+3. Variables and state involved
+4. Potential failure mode category
+```
+
+### Step 2: Match Against Failure Mode Categories
+
+**Failure Mode Reference**: Use this taxonomy to classify potential root causes.
+
+#### Category 1: Null/Undefined Reference Errors
+
+**Indicators**:
+- Error messages: "Cannot read property of null/undefined", "NullPointerException", "None has no attribute"
+- Variable access without prior null check
+- Optional/nullable values used without guards
+- Database queries returning no results
+
+**Analysis questions**:
+- Which variable is null?
+- Where was it expected to be assigned?
+- Is the null condition expected or exceptional?
+- Is there missing validation at data boundaries?
+
+**Common locations**:
+- API response handlers
+- Database query result processing
+- Configuration loading
+- User input processing
+
+#### Category 2: Race Conditions / Timing Issues
+
+**Indicators**:
+- Intermittent failures ("works sometimes")
+- Errors only in production/CI (faster/slower than local)
+- Multiple threads/processes accessing shared state
+- Async operations with unclear ordering
+- "works locally but fails in CI" (timing-dependent)
+
+**Analysis questions**:
+- Are there concurrent operations modifying shared state?
+- Is there async/await or Promise handling that might race?
+- Are there database transactions without proper isolation?
+- Are there cache invalidation timing issues?
+
+**Common locations**:
+- Shared state initialization
+- Database transaction boundaries
+- Cache operations
+- Event handlers
+- WebSocket/real-time features
+
+#### Category 3: Logic Errors / Incorrect Algorithms
+
+**Indicators**:
+- Wrong output (not crash, just incorrect results)
+- Off-by-one errors in loops/arrays
+- Incorrect conditionals (wrong operator, inverted logic)
+- State machine in invalid state
+- Calculation/formula errors
+
+**Analysis questions**:
+- What is the expected vs actual output?
+- Are there boundary conditions being handled incorrectly?
+- Is there complex conditional logic that might have edge cases?
+- Are there mathematical operations that might overflow/underflow?
+
+**Common locations**:
+- Loop bounds and iterations
+- Conditional branches
+- Data transformations
+- Business logic calculations
+- State transitions
+
+#### Category 4: Cross-Service / Integration Errors
+
+**Indicators**:
+- Errors after external API calls
+- Timeout or connection errors
+- Data format mismatches between systems
+- Authentication/authorization failures
+- Contract violations
+
+**Analysis questions**:
+- Which external service is involved?
+- Is the request format correct?
+- Is the response being parsed correctly?
+- Are error responses handled properly?
+- Are there retry/fallback mechanisms?
+
+**Common locations**:
+- API client code
+- Request/response serialization
+- Error handling for external calls
+- Configuration for external endpoints
+- Authentication token management
+
+#### Category 5: Resource Management Errors
+
+**Indicators**:
+- Memory errors (out of memory, buffer overflow)
+- File handle leaks
+- Connection pool exhaustion
+- Timeout due to resource starvation
+
+**Analysis questions**:
+- Are resources being properly closed/released?
+- Are there loops that accumulate resources?
+- Is there proper cleanup in error paths?
+- Are there limits on resource consumption?
+
+**Common locations**:
+- File I/O operations
+- Database connection management
+- Network socket handling
+- Stream processing
+- Large data processing
+
+#### Category 6: Configuration / Environment Errors
+
+**Indicators**:
+- Different behavior across environments
+- Missing or wrong configuration values
+- Environment variable issues
+- Dependency version mismatches
+
+**Analysis questions**:
+- Are all required config values present?
+- Are environment-specific configs correct?
+- Are there hardcoded values that should be configurable?
+- Are dependency versions compatible?
+
+**Common locations**:
+- Configuration loading code
+- Environment detection logic
+- Dependency injection setup
+- Build/deployment scripts
+
+### Step 3: Generate Hypotheses with File Locations
+
+**Template for hypothesis generation**:
+
+For each potential root cause identified, generate a hypothesis with:
+
+```json
+{
+  "id": "HYP_<N>",
+  "category": "<failure_mode_category>",
+  "description": "<specific, testable description of what might be wrong>",
+  "rationale": "<why this is suspected based on evidence>",
+  "files": [
+    "<file_path_1>",
+    "<file_path_2>"
+  ],
+  "lineRanges": {
+    "<file_path_1>": "<start_line>-<end_line>",
+    "<file_path_2>": "<start_line>-<end_line>"
+  },
+  "variablesToInspect": [
+    "<variable_name_1>",
+    "<variable_name_2>"
+  ],
+  "expectedEvidence": "<what log output would confirm this hypothesis>",
+  "confidence": <0.0-1.0>,
+  "status": "pending"
+}
+```
+
+**Locating specific files and lines**:
+
+1. **From stack traces**: Extract file paths and line numbers directly
+   ```
+   at UserController.create (src/controllers/user.ts:45:23)
+   → File: src/controllers/user.ts, Line: 45, expand to range: 40-55
+   ```
+
+2. **From reproduction steps**: Identify entry points
+   ```
+   "Navigate to /upload page" → Find route handler for /upload
+   → Likely: src/routes/upload.ts or src/pages/upload.tsx
+   ```
+
+3. **From imports**: Trace dependencies
+   ```
+   src/controllers/user.ts imports from src/services/database.ts
+   → Include both files if database interaction is suspected
+   ```
+
+4. **Expand line ranges**: Include context around suspect lines
+   - Function boundaries (include entire function)
+   - 10-15 lines before/after for context
+   - Related conditional blocks
+
+### Step 4: Calculate Confidence Scores
+
+**Confidence score calculation** (0.0 to 1.0 scale, for internal ranking only - not shown to user):
+
+Calculate based on evidence strength:
+
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| Direct stack trace match | +0.30 | File/line appears in error stack |
+| Error message pattern match | +0.20 | Error message matches failure category |
+| Reproduction path match | +0.15 | File is on the code path from reproduction steps |
+| Historical pattern | +0.15 | Similar issues found in this file/area before |
+| Code smell indicators | +0.10 | Missing null checks, unhandled promises, etc. |
+| Environmental correlation | +0.10 | Issue matches environment-specific conditions |
+
+**Example confidence calculations**:
+
+```
+HYP_1: Null reference in user.ts:45
+- Stack trace points directly to line: +0.30
+- Error is "Cannot read property of null": +0.20
+- user.ts is in reproduction path: +0.15
+- Code has no null check before access: +0.10
+Total: 0.75 (high confidence)
+
+HYP_2: Race condition in cache.ts:120
+- No direct stack trace evidence: +0.00
+- Error is intermittent per user report: +0.20
+- cache.ts is imported by affected module: +0.15
+- Async operations without proper ordering: +0.10
+Total: 0.45 (medium confidence)
+```
+
+**Ranking rules**:
+- Generate 3-5 hypotheses minimum
+- Rank by confidence score (highest first)
+- Include at least one hypothesis from a different failure category as alternative
+- If all hypotheses have low confidence (<0.4), flag for additional information gathering
+
+### Step 5: Format and Store Hypotheses
+
+**Template for adding hypotheses to session**:
+
+```json
+{
+  "hypotheses": [
+    {
+      "id": "HYP_1",
+      "category": "null_reference",
+      "description": "User object is null when accessing email property due to missing null check after database query",
+      "rationale": "Stack trace shows error at user.ts:45 accessing user.email, and database query at line 42 may return null for non-existent users",
+      "files": ["src/controllers/user.ts", "src/services/database.ts"],
+      "lineRanges": {
+        "src/controllers/user.ts": "40-55",
+        "src/services/database.ts": "120-135"
+      },
+      "variablesToInspect": ["user", "userId", "queryResult"],
+      "expectedEvidence": "Log should show user=null after database query, or userId not found in database",
+      "confidence": 0.75,
+      "status": "pending",
+      "generatedAt": "2025-01-31T10:32:00Z"
+    },
+    {
+      "id": "HYP_2",
+      "category": "race_condition",
+      "description": "Cache is read before initialization completes on first request",
+      "rationale": "Issue is intermittent and occurs on first request after deployment, suggesting initialization timing",
+      "files": ["src/cache/manager.ts", "src/server/startup.ts"],
+      "lineRanges": {
+        "src/cache/manager.ts": "15-40",
+        "src/server/startup.ts": "50-75"
+      },
+      "variablesToInspect": ["cacheReady", "initPromise", "startupSequence"],
+      "expectedEvidence": "Log should show cache access timestamp before initialization complete timestamp",
+      "confidence": 0.55,
+      "status": "pending",
+      "generatedAt": "2025-01-31T10:32:00Z"
+    },
+    {
+      "id": "HYP_3",
+      "category": "logic_error",
+      "description": "Validation function returns true for invalid input due to inverted conditional",
+      "rationale": "Expected 400 error but got 500, suggesting validation passed when it should have failed",
+      "files": ["src/validators/user.ts"],
+      "lineRanges": {
+        "src/validators/user.ts": "20-45"
+      },
+      "variablesToInspect": ["email", "validationResult", "isValid"],
+      "expectedEvidence": "Log should show isValid=true even when email is null/invalid",
+      "confidence": 0.40,
+      "status": "pending",
+      "generatedAt": "2025-01-31T10:32:00Z"
+    }
+  ],
+  "iterationCount": 1,
+  "status": "hypothesis_generated"
+}
+```
+
+### Hypothesis Generation Examples
+
+#### Example 1: Runtime Error (Null Reference)
+
+**Input**:
+```
+Issue Type: Runtime Error
+Error: TypeError: Cannot read property 'id' of null
+  at UserController.create (src/controllers/user.ts:45:23)
+  at Router.handle (node_modules/express/lib/router/index.js:284:9)
+Reproduction: POST /api/users with {"name": "test", "email": null}
+Expected: 400 Bad Request with validation error
+Actual: 500 Internal Server Error
+```
+
+**Generated Hypotheses**:
+
+```json
+[
+  {
+    "id": "HYP_1",
+    "category": "null_reference",
+    "description": "User object is null after database lookup before accessing user.id",
+    "rationale": "Stack trace points to user.ts:45, error is 'Cannot read property id of null', suggesting a database lookup returns null that is not checked",
+    "files": ["src/controllers/user.ts"],
+    "lineRanges": {
+      "src/controllers/user.ts": "40-55"
+    },
+    "variablesToInspect": ["user", "userId", "dbResult"],
+    "expectedEvidence": "Log shows user=null after DB query, userId was not found",
+    "confidence": 0.85
+  },
+  {
+    "id": "HYP_2",
+    "category": "logic_error",
+    "description": "Input validation skipped for POST /api/users allowing null email to reach controller",
+    "rationale": "Expected behavior is 400 Bad Request for validation error, but 500 suggests validation didn't run or didn't catch null email",
+    "files": ["src/middleware/validation.ts", "src/routes/users.ts"],
+    "lineRanges": {
+      "src/middleware/validation.ts": "10-35",
+      "src/routes/users.ts": "20-30"
+    },
+    "variablesToInspect": ["email", "validationErrors", "validationSchema"],
+    "expectedEvidence": "Log shows validation middleware executed but email=null passed through",
+    "confidence": 0.60
+  },
+  {
+    "id": "HYP_3",
+    "category": "configuration",
+    "description": "Validation middleware not applied to POST /api/users route",
+    "rationale": "Route might be missing validation middleware entirely",
+    "files": ["src/routes/users.ts", "src/routes/index.ts"],
+    "lineRanges": {
+      "src/routes/users.ts": "1-20",
+      "src/routes/index.ts": "15-35"
+    },
+    "variablesToInspect": ["routeMiddleware", "validationMiddleware"],
+    "expectedEvidence": "Log shows request reaches controller without validation middleware execution",
+    "confidence": 0.45
+  }
+]
+```
+
+#### Example 2: Intermittent Issue (Race Condition)
+
+**Input**:
+```
+Issue Type: Intermittent/Flaky Issue
+Error: Random test failures in CI, passes locally
+Test: "should return cached user preferences"
+Behavior: Sometimes returns stale data, sometimes correct data
+Keywords: "flaky", "intermittent", "works locally"
+```
+
+**Generated Hypotheses**:
+
+```json
+[
+  {
+    "id": "HYP_1",
+    "category": "race_condition",
+    "description": "Cache read occurs before async write from previous test completes",
+    "rationale": "Test isolation issue where cache state leaks between tests, timing difference between local and CI explains inconsistency",
+    "files": ["src/cache/preferences.ts", "tests/cache.test.ts"],
+    "lineRanges": {
+      "src/cache/preferences.ts": "45-80",
+      "tests/cache.test.ts": "20-50"
+    },
+    "variablesToInspect": ["cacheWritePromise", "cacheState", "testSetup"],
+    "expectedEvidence": "Timestamp logs show read completes before write on failures, write completes before read on success",
+    "confidence": 0.70
+  },
+  {
+    "id": "HYP_2",
+    "category": "race_condition",
+    "description": "Test relies on setTimeout that is faster locally than in CI",
+    "rationale": "CI environments often have different timing characteristics than local machines",
+    "files": ["tests/cache.test.ts", "src/cache/preferences.ts"],
+    "lineRanges": {
+      "tests/cache.test.ts": "30-45",
+      "src/cache/preferences.ts": "60-75"
+    },
+    "variablesToInspect": ["timeoutMs", "cacheExpiry", "timerCallback"],
+    "expectedEvidence": "Log shows timeout elapsed before expected in CI runs",
+    "confidence": 0.55
+  },
+  {
+    "id": "HYP_3",
+    "category": "resource_management",
+    "description": "Shared database connection not properly reset between tests",
+    "rationale": "Database state from parallel tests might interfere",
+    "files": ["tests/setup.ts", "src/database/connection.ts"],
+    "lineRanges": {
+      "tests/setup.ts": "1-30",
+      "src/database/connection.ts": "80-100"
+    },
+    "variablesToInspect": ["dbConnection", "testIsolation", "beforeEach"],
+    "expectedEvidence": "Log shows queries from different tests interleaving",
+    "confidence": 0.40
+  }
+]
+```
+
+#### Example 3: Cross-Service Issue
+
+**Input**:
+```
+Issue Type: Cross-Service/Integration Issue
+Error: 504 Gateway Timeout when calling payment API
+Reproduction: Checkout with cart > $1000
+Expected: Payment processed, order confirmed
+Actual: Timeout after 30 seconds, order stuck in "processing"
+```
+
+**Generated Hypotheses**:
+
+```json
+[
+  {
+    "id": "HYP_1",
+    "category": "cross_service",
+    "description": "Payment API has longer processing time for large amounts, exceeding configured timeout",
+    "rationale": "Issue specific to carts > $1000 suggests amount-dependent processing time",
+    "files": ["src/services/payment.ts", "src/config/api.ts"],
+    "lineRanges": {
+      "src/services/payment.ts": "40-80",
+      "src/config/api.ts": "15-25"
+    },
+    "variablesToInspect": ["paymentTimeout", "amount", "apiResponse", "requestStartTime"],
+    "expectedEvidence": "Log shows request sent at T, timeout at T+30s, but payment API took 45s to respond",
+    "confidence": 0.75
+  },
+  {
+    "id": "HYP_2",
+    "category": "cross_service",
+    "description": "Payment API returns different response structure for fraud check on large amounts",
+    "rationale": "Large amounts may trigger additional fraud verification with different response format",
+    "files": ["src/services/payment.ts", "src/models/payment-response.ts"],
+    "lineRanges": {
+      "src/services/payment.ts": "85-120",
+      "src/models/payment-response.ts": "1-40"
+    },
+    "variablesToInspect": ["apiResponse", "responseBody", "fraudCheckStatus"],
+    "expectedEvidence": "Log shows unexpected response structure with fraudCheck field not in model",
+    "confidence": 0.50
+  },
+  {
+    "id": "HYP_3",
+    "category": "logic_error",
+    "description": "Order state not properly updated when payment is pending fraud review",
+    "rationale": "Order stuck in 'processing' suggests state machine doesn't handle pending payment status",
+    "files": ["src/services/order.ts", "src/models/order-state.ts"],
+    "lineRanges": {
+      "src/services/order.ts": "100-150",
+      "src/models/order-state.ts": "20-50"
+    },
+    "variablesToInspect": ["orderStatus", "paymentStatus", "stateTransition"],
+    "expectedEvidence": "Log shows payment returns 'pending_review' status but order handler doesn't process it",
+    "confidence": 0.45
+  }
+]
+```
+
+### Hypothesis Generation Rules
+
+1. **Always generate 3-5 hypotheses**: Even if one seems obvious, include alternatives
+2. **Include at least one from a different category**: Avoid tunnel vision
+3. **Be specific about locations**: Exact files and line ranges, not vague areas
+4. **Include variables to inspect**: What to log for evidence
+5. **Define expected evidence**: What log output would confirm/reject the hypothesis
+6. **Confidence is internal**: Use for prioritization, don't show to user
+7. **Keep descriptions testable**: Each hypothesis should be provable or disprovable with logging
+
+### Session Update After Hypothesis Generation
+
+After generating hypotheses, update the session:
+
+```json
+{
+  "hypotheses": [/* generated hypotheses */],
+  "iterationCount": 1,  // or increment if regenerating
+  "status": "hypothesis_generated"
+}
+```
+
+Then proceed to the Multi-File Tracking phase to expand hypothesis coverage across related files, followed by Logging Infrastructure Review and Instrumentation.
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
