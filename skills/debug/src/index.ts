@@ -1,7 +1,7 @@
 /**
- * Debug Skill - Session Management
+ * Debug Skill - Session Management and Intake
  *
- * Exports core session management functionality for the debug skill
+ * Exports core session management and intake functionality for the debug skill
  */
 
 export { SessionManager } from './SessionManager';
@@ -13,3 +13,6 @@ export type {
   ResearchFinding,
   FixAttempt,
 } from './types';
+
+export { performIntake, detectFlakyIssue, generateSessionId } from './intake';
+export type { IssueIntakeInput, IntakeResult } from './intake';
