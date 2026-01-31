@@ -26,3 +26,10 @@ export type {
   ErrorHandlingBlock,
   CodeAnalysisResult,
 } from './CodeAnalyzer';
+
+export { DependencyGraph } from './DependencyGraph';
+export type {
+  FileDependency,
+  APIEndpoint,
+  DependencyGraphConfig,
+} from './DependencyGraph';

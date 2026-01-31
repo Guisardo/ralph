@@ -1,0 +1,27 @@
+# Path traversal false positives in DependencyGraph.ts
+# These path operations are internal to the tool and operate only on project files
+# under the configured rootDir. The DependencyGraph class is designed for codebase analysis
+# and does not accept arbitrary user input for file paths.
+
+# Line 94: path.resolve(filePath) - filePath is from internal file analysis
+javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal:DependencyGraph.ts:94
+
+# Lines 186-211: Import resolution within project directory tree
+javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal:DependencyGraph.ts:191
+javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal:DependencyGraph.ts:200
+
+# Line 296: File system traversal within configured rootDir
+javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal:DependencyGraph.ts:296
+
+# ReDoS false positives - regex patterns are for code analysis
+# Function names come from AST analysis, not arbitrary user input
+# These patterns are simple and bounded, not vulnerable to catastrophic backtracking
+
+# Line 268: Function name pattern for call detection
+javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp:DependencyGraph.ts:268
+
+# Line 391: Function name pattern for call tracing
+javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp:DependencyGraph.ts:391
+
+# Line 546: API path pattern for endpoint detection
+javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp:DependencyGraph.ts:546
