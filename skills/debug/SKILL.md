@@ -2693,6 +2693,1134 @@ After logging infrastructure review is complete:
 
 ---
 
+## Language-Adaptive Instrumentation Workflow Template
+
+**Purpose:** Add debug instrumentation to code in a language-appropriate manner that follows project conventions, uses correct logging idioms, and ensures safe data formatting.
+
+**When to Use:** After logging infrastructure review phase, before reproduction phase.
+
+**Critical Requirement:** Instrumentation must be language-appropriate, style-preserving, and include unique markers for reliable cleanup.
+
+---
+
+### Overview: Why Language-Adaptive Instrumentation Matters
+
+Adding debug instrumentation requires understanding the target language to:
+
+1. **Use correct logging constructs**: Different languages have different logging conventions
+2. **Follow project style**: Match indentation, quote style, and formatting conventions
+3. **Prevent log injection**: Escape special characters that could corrupt log output
+4. **Enable correlation**: Format logs consistently for cross-file analysis
+5. **Ensure cleanup**: Use markers that are valid comments in the target language
+
+This template provides language-specific instrumentation patterns for reliable debugging.
+
+---
+
+### Step 1: Detect Language from File
+
+**When**: At the start of instrumentation for each file
+
+**Action**: Identify the programming language to determine logging syntax and comment style
+
+**Language Detection Logic:**
+
+```
+1. Extract file extension from file path
+2. Map extension to language family
+3. Load language-specific instrumentation patterns
+4. Verify with syntax analysis if ambiguous
+```
+
+**Extension to Language Mapping:**
+
+| Extension(s) | Language | Comment Syntax | String Syntax |
+|--------------|----------|----------------|---------------|
+| `.js`, `.mjs`, `.cjs` | JavaScript | `//` or `/* */` | `'`, `"`, `` ` `` |
+| `.ts`, `.tsx`, `.mts`, `.cts` | TypeScript | `//` or `/* */` | `'`, `"`, `` ` `` |
+| `.jsx` | JavaScript (React) | `//` or `/* */` | `'`, `"`, `` ` `` |
+| `.py`, `.pyw` | Python | `#` | `'`, `"`, `'''`, `"""` |
+| `.go` | Go | `//` or `/* */` | `"`, `` ` `` |
+| `.java` | Java | `//` or `/* */` | `"` |
+| `.kt`, `.kts` | Kotlin | `//` or `/* */` | `"`, `"""` |
+| `.rb`, `.rake` | Ruby | `#` | `'`, `"` |
+| `.php` | PHP | `//`, `#`, or `/* */` | `'`, `"` |
+| `.c`, `.h` | C | `//` or `/* */` | `"` |
+| `.cpp`, `.hpp`, `.cc`, `.cxx` | C++ | `//` or `/* */` | `"` |
+| `.rs` | Rust | `//` or `/* */` | `"` |
+| `.swift` | Swift | `//` or `/* */` | `"` |
+| `.scala`, `.sc` | Scala | `//` or `/* */` | `"`, `"""` |
+| `.cs` | C# | `//` or `/* */` | `"`, `@"` |
+
+**Ambiguous Extension Handling:**
+
+Some extensions need syntax analysis:
+- `.h` files: Check for C++ features (`class`, `namespace`, `template`) vs pure C
+- Files without extension: Scan shebang line (`#!/usr/bin/python`, `#!/bin/bash`)
+
+**Language Detection Template:**
+
+```json
+{
+  "fileLanguages": {
+    "src/controllers/UserController.ts": {
+      "language": "typescript",
+      "detectionMethod": "extension",
+      "commentSyntax": "//",
+      "multilineCommentSyntax": "/* */",
+      "stringQuotes": ["'", "\"", "`"],
+      "loggingConstruct": "console.log"
+    },
+    "src/services/user_service.py": {
+      "language": "python",
+      "detectionMethod": "extension",
+      "commentSyntax": "#",
+      "multilineCommentSyntax": "'''",
+      "stringQuotes": ["'", "\"", "'''", "\"\"\""],
+      "loggingConstruct": "logging.debug"
+    }
+  }
+}
+```
+
+---
+
+### Step 2: Select Language-Appropriate Logging
+
+**When**: After language detection, before generating instrumentation code
+
+**Action**: Choose the correct logging method based on language AND logging infrastructure review findings
+
+**Logging Method Selection Logic:**
+
+```
+1. Read instrumentationStrategy from logging infrastructure review
+2. If useFramework = true:
+   - Use frameworkName with loggerVariable (e.g., "logger.debug")
+3. If useFramework = false:
+   - Use language-appropriate fallback from table below
+```
+
+**Language-Specific Logging Constructs:**
+
+#### JavaScript/TypeScript
+
+**With Framework (from infrastructure review):**
+```javascript
+// Winston
+logger.debug('[DEBUG_HYP_1] message', { key: value });
+
+// Pino
+logger.debug({ key: value }, '[DEBUG_HYP_1] message');
+
+// Bunyan
+log.debug({ key: value }, '[DEBUG_HYP_1] message');
+```
+
+**Fallback (no framework):**
+```javascript
+console.log('[DEBUG_HYP_1] message:', variable);
+console.log('[DEBUG_HYP_1] object:', JSON.stringify(variable, null, 2));
+console.error('[DEBUG_HYP_1] error:', error.message, error.stack);
+```
+
+**Timing:**
+```javascript
+// DEBUG_HYP_1_START
+const DEBUG_HYP_1_START_TIME = Date.now();
+console.log('[DEBUG_HYP_1][START] Entering function at', new Date().toISOString());
+// ... code ...
+console.log('[DEBUG_HYP_1][END] Function took', Date.now() - DEBUG_HYP_1_START_TIME, 'ms');
+// DEBUG_HYP_1_END
+```
+
+#### Python
+
+**With Framework (logging module):**
+```python
+import logging
+logger = logging.getLogger(__name__)
+
+# DEBUG_HYP_1_START
+logger.debug('[DEBUG_HYP_1] message: %s', variable)
+logger.debug('[DEBUG_HYP_1] object: %r', variable)
+# DEBUG_HYP_1_END
+```
+
+**With Loguru:**
+```python
+from loguru import logger
+
+# DEBUG_HYP_1_START
+logger.debug('[DEBUG_HYP_1] message: {}', variable)
+logger.debug('[DEBUG_HYP_1] object: {!r}', variable)
+# DEBUG_HYP_1_END
+```
+
+**Fallback (no framework):**
+```python
+# DEBUG_HYP_1_START
+print(f'[DEBUG_HYP_1] message: {variable}')
+print(f'[DEBUG_HYP_1] object: {variable!r}')
+# DEBUG_HYP_1_END
+```
+
+**Timing:**
+```python
+import time
+
+# DEBUG_HYP_1_START
+_debug_hyp_1_start = time.time()
+print(f'[DEBUG_HYP_1][START] Entering function at {time.strftime("%Y-%m-%dT%H:%M:%S")}')
+# ... code ...
+print(f'[DEBUG_HYP_1][END] Function took {(time.time() - _debug_hyp_1_start) * 1000:.2f}ms')
+# DEBUG_HYP_1_END
+```
+
+#### Go
+
+**With Framework (logrus):**
+```go
+import log "github.com/sirupsen/logrus"
+
+// DEBUG_HYP_1_START
+log.WithFields(log.Fields{
+    "variable": variable,
+    "hyp": "HYP_1",
+}).Debug("[DEBUG_HYP_1] message")
+// DEBUG_HYP_1_END
+```
+
+**With Zap:**
+```go
+import "go.uber.org/zap"
+
+// DEBUG_HYP_1_START
+logger.Debug("[DEBUG_HYP_1] message",
+    zap.Any("variable", variable),
+)
+// DEBUG_HYP_1_END
+```
+
+**Fallback (fmt package):**
+```go
+import "fmt"
+
+// DEBUG_HYP_1_START
+fmt.Printf("[DEBUG_HYP_1] message: %v\n", variable)
+fmt.Printf("[DEBUG_HYP_1] object: %+v\n", variable)
+// DEBUG_HYP_1_END
+```
+
+**Timing:**
+```go
+import "time"
+
+// DEBUG_HYP_1_START
+debugHyp1Start := time.Now()
+fmt.Printf("[DEBUG_HYP_1][START] Entering function at %s\n", debugHyp1Start.Format(time.RFC3339))
+// ... code ...
+fmt.Printf("[DEBUG_HYP_1][END] Function took %v\n", time.Since(debugHyp1Start))
+// DEBUG_HYP_1_END
+```
+
+#### Java
+
+**With SLF4J/Logback:**
+```java
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+// DEBUG_HYP_1_START
+logger.debug("[DEBUG_HYP_1] message: {}", variable);
+logger.debug("[DEBUG_HYP_1] object: {}", variable.toString());
+// DEBUG_HYP_1_END
+```
+
+**With Log4j:**
+```java
+import org.apache.log4j.Logger;
+
+// DEBUG_HYP_1_START
+logger.debug("[DEBUG_HYP_1] message: " + variable);
+// DEBUG_HYP_1_END
+```
+
+**Fallback (System.out):**
+```java
+// DEBUG_HYP_1_START
+System.out.println("[DEBUG_HYP_1] message: " + variable);
+System.out.println("[DEBUG_HYP_1] object: " + variable.toString());
+// DEBUG_HYP_1_END
+```
+
+**Timing:**
+```java
+// DEBUG_HYP_1_START
+long debugHyp1Start = System.currentTimeMillis();
+System.out.println("[DEBUG_HYP_1][START] Entering function at " + java.time.Instant.now());
+// ... code ...
+System.out.println("[DEBUG_HYP_1][END] Function took " + (System.currentTimeMillis() - debugHyp1Start) + "ms");
+// DEBUG_HYP_1_END
+```
+
+#### Ruby
+
+**With Rails Logger:**
+```ruby
+# DEBUG_HYP_1_START
+Rails.logger.debug "[DEBUG_HYP_1] message: #{variable}"
+Rails.logger.debug "[DEBUG_HYP_1] object: #{variable.inspect}"
+# DEBUG_HYP_1_END
+```
+
+**Fallback (puts):**
+```ruby
+# DEBUG_HYP_1_START
+puts "[DEBUG_HYP_1] message: #{variable}"
+puts "[DEBUG_HYP_1] object: #{variable.inspect}"
+# DEBUG_HYP_1_END
+```
+
+**Timing:**
+```ruby
+# DEBUG_HYP_1_START
+debug_hyp_1_start = Time.now
+puts "[DEBUG_HYP_1][START] Entering function at #{debug_hyp_1_start.iso8601}"
+# ... code ...
+puts "[DEBUG_HYP_1][END] Function took #{((Time.now - debug_hyp_1_start) * 1000).round(2)}ms"
+# DEBUG_HYP_1_END
+```
+
+#### PHP
+
+**With Monolog:**
+```php
+// DEBUG_HYP_1_START
+$logger->debug('[DEBUG_HYP_1] message', ['variable' => $variable]);
+// DEBUG_HYP_1_END
+```
+
+**Fallback (error_log):**
+```php
+// DEBUG_HYP_1_START
+error_log('[DEBUG_HYP_1] message: ' . print_r($variable, true));
+// DEBUG_HYP_1_END
+```
+
+#### C/C++
+
+**With spdlog (C++):**
+```cpp
+// DEBUG_HYP_1_START
+spdlog::debug("[DEBUG_HYP_1] message: {}", variable);
+// DEBUG_HYP_1_END
+```
+
+**Fallback (printf/cout):**
+```c
+// DEBUG_HYP_1_START
+printf("[DEBUG_HYP_1] message: %d\n", variable);
+// DEBUG_HYP_1_END
+```
+
+```cpp
+// DEBUG_HYP_1_START
+std::cout << "[DEBUG_HYP_1] message: " << variable << std::endl;
+// DEBUG_HYP_1_END
+```
+
+#### Rust
+
+**With tracing crate:**
+```rust
+// DEBUG_HYP_1_START
+tracing::debug!("[DEBUG_HYP_1] message: {:?}", variable);
+// DEBUG_HYP_1_END
+```
+
+**Fallback (println!):**
+```rust
+// DEBUG_HYP_1_START
+println!("[DEBUG_HYP_1] message: {:?}", variable);
+// DEBUG_HYP_1_END
+```
+
+---
+
+### Step 3: Add Marker Comments
+
+**When**: Wrapping all instrumentation code for each hypothesis
+
+**Action**: Add unique START and END marker comments using language-appropriate syntax
+
+**Marker Format:**
+
+```
+// DEBUG_HYP_N_START   ← Hypothesis number (1, 2, 3, etc.)
+<instrumentation code>
+// DEBUG_HYP_N_END
+```
+
+**Marker Comment Syntax by Language:**
+
+| Language | Start Marker | End Marker |
+|----------|-------------|------------|
+| JavaScript/TypeScript | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| Python | `# DEBUG_HYP_1_START` | `# DEBUG_HYP_1_END` |
+| Go | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| Java | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| Kotlin | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| Ruby | `# DEBUG_HYP_1_START` | `# DEBUG_HYP_1_END` |
+| PHP | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| C/C++ | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| Rust | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| Swift | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| Scala | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| C# | `// DEBUG_HYP_1_START` | `// DEBUG_HYP_1_END` |
+| Shell/Bash | `# DEBUG_HYP_1_START` | `# DEBUG_HYP_1_END` |
+| SQL | `-- DEBUG_HYP_1_START` | `-- DEBUG_HYP_1_END` |
+| HTML/XML | `<!-- DEBUG_HYP_1_START -->` | `<!-- DEBUG_HYP_1_END -->` |
+| CSS | `/* DEBUG_HYP_1_START */` | `/* DEBUG_HYP_1_END */` |
+
+**Marker Rules:**
+
+1. **One marker pair per hypothesis**: Each hypothesis gets its own numbered markers
+2. **Markers on separate lines**: Never combine markers with code on the same line
+3. **Match indentation**: Markers should match the indentation level of surrounding code
+4. **No nested markers**: Markers from different hypotheses should not overlap
+5. **Unique identifiers**: Use hypothesis ID in markers for reliable cleanup
+
+**Example: Multi-Hypothesis Markers in Same File:**
+
+```typescript
+async function getUser(userId: string): Promise<User> {
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] getUser called with userId:', userId);
+    // DEBUG_HYP_1_END
+
+    const user = await repository.findById(userId);
+
+    // DEBUG_HYP_2_START
+    console.log('[DEBUG_HYP_2] repository.findById returned:', JSON.stringify(user, null, 2));
+    console.log('[DEBUG_HYP_2] user is null:', user === null);
+    // DEBUG_HYP_2_END
+
+    if (!user) {
+        // DEBUG_HYP_1_START
+        console.log('[DEBUG_HYP_1] User not found, returning null');
+        // DEBUG_HYP_1_END
+        return null;
+    }
+
+    return user;
+}
+```
+
+---
+
+### Step 4: Log Variable Values, Execution Paths, and Timing Data
+
+**When**: Determining what to instrument for each hypothesis
+
+**Action**: Add logging statements for variables, paths, and timing based on hypothesis requirements
+
+#### 4.1 Variable Value Logging
+
+**What to Log:**
+
+From hypothesis `variablesToInspect` field:
+- Input parameters and their values
+- Return values from function calls
+- Object state at critical points
+- Computed values before use
+
+**Safe Serialization Patterns:**
+
+**JavaScript/TypeScript:**
+```javascript
+// DEBUG_HYP_1_START
+// Simple values
+console.log('[DEBUG_HYP_1] userId:', userId);
+console.log('[DEBUG_HYP_1] count:', count);
+
+// Objects - with null check and safe serialization
+console.log('[DEBUG_HYP_1] user:', user ? JSON.stringify(user, null, 2) : 'null');
+
+// Arrays - with length limit
+console.log('[DEBUG_HYP_1] items (first 5):', JSON.stringify(items?.slice(0, 5), null, 2));
+
+// Error objects
+console.log('[DEBUG_HYP_1] error:', error?.message, error?.stack);
+// DEBUG_HYP_1_END
+```
+
+**Python:**
+```python
+# DEBUG_HYP_1_START
+# Simple values
+print(f'[DEBUG_HYP_1] user_id: {user_id}')
+print(f'[DEBUG_HYP_1] count: {count}')
+
+# Objects - with repr for detailed view
+print(f'[DEBUG_HYP_1] user: {user!r}')
+
+# Dicts/Lists - with safe formatting
+import json
+print(f'[DEBUG_HYP_1] data: {json.dumps(data, default=str, indent=2)}')
+
+# Exception objects
+print(f'[DEBUG_HYP_1] error: {type(error).__name__}: {error}')
+import traceback
+traceback.print_exc()
+# DEBUG_HYP_1_END
+```
+
+**Go:**
+```go
+// DEBUG_HYP_1_START
+// Simple values
+fmt.Printf("[DEBUG_HYP_1] userID: %s\n", userID)
+fmt.Printf("[DEBUG_HYP_1] count: %d\n", count)
+
+// Structs - with detailed view
+fmt.Printf("[DEBUG_HYP_1] user: %+v\n", user)
+
+// Pointers - with nil check
+if user != nil {
+    fmt.Printf("[DEBUG_HYP_1] user.Name: %s\n", user.Name)
+} else {
+    fmt.Printf("[DEBUG_HYP_1] user: <nil>\n")
+}
+
+// Errors
+if err != nil {
+    fmt.Printf("[DEBUG_HYP_1] error: %v\n", err)
+}
+// DEBUG_HYP_1_END
+```
+
+#### 4.2 Execution Path Logging
+
+**What to Log:**
+
+- Entry/exit points of functions under investigation
+- Branch decisions (if/else, switch)
+- Loop iterations (with iteration limits)
+- Early returns
+
+**Execution Path Patterns:**
+
+```javascript
+// DEBUG_HYP_1_START
+console.log('[DEBUG_HYP_1][ENTER] processUser()');
+// DEBUG_HYP_1_END
+
+async function processUser(user: User): Promise<Result> {
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1][PATH] Starting user processing');
+    // DEBUG_HYP_1_END
+
+    if (!user.isActive) {
+        // DEBUG_HYP_1_START
+        console.log('[DEBUG_HYP_1][BRANCH] User inactive, returning early');
+        // DEBUG_HYP_1_END
+        return { status: 'inactive' };
+    }
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1][BRANCH] User active, continuing');
+    // DEBUG_HYP_1_END
+
+    for (let i = 0; i < items.length; i++) {
+        // DEBUG_HYP_1_START
+        // Log first 3 iterations only to avoid log flooding
+        if (i < 3) {
+            console.log(`[DEBUG_HYP_1][LOOP] Processing item ${i}:`, items[i].id);
+        } else if (i === 3) {
+            console.log(`[DEBUG_HYP_1][LOOP] ... (${items.length - 3} more items)`);
+        }
+        // DEBUG_HYP_1_END
+
+        await processItem(items[i]);
+    }
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1][EXIT] processUser() completed');
+    // DEBUG_HYP_1_END
+
+    return { status: 'success' };
+}
+```
+
+#### 4.3 Timing Data Logging
+
+**When to Log Timing:**
+
+- For performance-related hypotheses
+- For timeout investigations
+- For race condition analysis
+- For operations involving external calls
+
+**Timing Patterns:**
+
+**JavaScript/TypeScript:**
+```javascript
+// DEBUG_HYP_1_START
+const DEBUG_HYP_1_START_TIME = performance.now();
+const DEBUG_HYP_1_TIMESTAMP = new Date().toISOString();
+console.log(`[DEBUG_HYP_1][TIMING][START] ${DEBUG_HYP_1_TIMESTAMP}`);
+// DEBUG_HYP_1_END
+
+// ... code being timed ...
+
+// DEBUG_HYP_1_START
+const DEBUG_HYP_1_END_TIME = performance.now();
+const DEBUG_HYP_1_DURATION = DEBUG_HYP_1_END_TIME - DEBUG_HYP_1_START_TIME;
+console.log(`[DEBUG_HYP_1][TIMING][END] Duration: ${DEBUG_HYP_1_DURATION.toFixed(2)}ms`);
+// DEBUG_HYP_1_END
+```
+
+**Python:**
+```python
+# DEBUG_HYP_1_START
+import time
+from datetime import datetime
+_debug_hyp_1_start = time.perf_counter()
+_debug_hyp_1_timestamp = datetime.utcnow().isoformat() + 'Z'
+print(f'[DEBUG_HYP_1][TIMING][START] {_debug_hyp_1_timestamp}')
+# DEBUG_HYP_1_END
+
+# ... code being timed ...
+
+# DEBUG_HYP_1_START
+_debug_hyp_1_end = time.perf_counter()
+_debug_hyp_1_duration = (_debug_hyp_1_end - _debug_hyp_1_start) * 1000
+print(f'[DEBUG_HYP_1][TIMING][END] Duration: {_debug_hyp_1_duration:.2f}ms')
+# DEBUG_HYP_1_END
+```
+
+---
+
+### Step 5: Preserve Indentation and Code Style
+
+**When**: Generating instrumentation code to insert into files
+
+**Action**: Match the existing code style for seamless integration
+
+**Style Detection:**
+
+1. **Indentation Style**: Detect tabs vs spaces, and space count (2, 4, 8)
+2. **Quote Style**: Detect single vs double quotes preference
+3. **Semicolon Usage**: Detect if semicolons are used (JavaScript)
+4. **Line Ending Style**: Detect LF vs CRLF
+5. **Brace Style**: Detect K&R vs Allman brace placement
+
+**Style Detection Commands:**
+
+```bash
+# Detect indentation (tabs vs spaces)
+head -50 src/file.ts | grep -E '^\s' | head -1 | cat -A
+
+# Detect quote style in JS/TS
+grep -oE "['\"][^'\"]+['\"]" src/file.ts | head -10
+
+# Detect semicolon usage
+grep -c ';$' src/file.ts
+```
+
+**Style Preservation Rules:**
+
+1. **Match indentation exactly**: Use same tabs/spaces as surrounding code
+2. **Match quote style**: Use same quote character for strings
+3. **Match line endings**: Preserve LF or CRLF
+4. **Follow existing patterns**: If file uses `const`, don't use `let` in instrumentation
+5. **Match brace style**: Follow same opening brace placement
+
+**Example: Style-Preserving Instrumentation**
+
+**Original Code (2-space indent, single quotes, no semicolons):**
+```javascript
+async function getUser(userId) {
+  const user = await db.findUser(userId)
+  return user
+}
+```
+
+**Instrumented (matches style):**
+```javascript
+async function getUser(userId) {
+  // DEBUG_HYP_1_START
+  console.log('[DEBUG_HYP_1] getUser called with userId:', userId)
+  // DEBUG_HYP_1_END
+  const user = await db.findUser(userId)
+  // DEBUG_HYP_1_START
+  console.log('[DEBUG_HYP_1] db.findUser returned:', user)
+  // DEBUG_HYP_1_END
+  return user
+}
+```
+
+**Style Analysis Template:**
+
+```json
+{
+  "fileStyle": {
+    "src/services/user.ts": {
+      "indentation": {
+        "type": "spaces",
+        "size": 2
+      },
+      "quotes": "single",
+      "semicolons": false,
+      "lineEnding": "LF",
+      "braceStyle": "K&R"
+    }
+  }
+}
+```
+
+---
+
+### Step 6: Escape Special Characters for Log Safety
+
+**When**: Generating log statements that include user data or external input
+
+**Action**: Sanitize values to prevent log injection and ensure readable output
+
+**Log Injection Risks:**
+
+1. **Newline injection**: Attacker data contains `\n` to create fake log entries
+2. **Control character injection**: Data contains ANSI escape codes
+3. **Format string injection**: Data contains format specifiers like `%s`, `%d`, `{}`, etc.
+4. **JSON breaking**: Data contains unescaped quotes or special characters
+
+**Escaping Patterns by Language:**
+
+**JavaScript/TypeScript:**
+```javascript
+// DEBUG_HYP_1_START
+// Safe string logging - escape newlines and control characters
+function debugSafeString(value) {
+    if (typeof value !== 'string') return String(value);
+    return value
+        .replace(/\\/g, '\\\\')     // Escape backslashes
+        .replace(/\n/g, '\\n')       // Escape newlines
+        .replace(/\r/g, '\\r')       // Escape carriage returns
+        .replace(/\t/g, '\\t')       // Escape tabs
+        .replace(/[\x00-\x1F\x7F]/g, ''); // Remove control characters
+}
+
+// Usage
+console.log('[DEBUG_HYP_1] userInput:', debugSafeString(userInput));
+
+// For JSON serialization - handle circular references
+function debugSafeJson(obj, maxDepth = 3) {
+    const seen = new WeakSet();
+    return JSON.stringify(obj, (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) return '[Circular]';
+            seen.add(value);
+        }
+        return value;
+    }, 2);
+}
+// DEBUG_HYP_1_END
+```
+
+**Python:**
+```python
+# DEBUG_HYP_1_START
+import re
+
+def debug_safe_string(value):
+    """Escape special characters for safe logging"""
+    if not isinstance(value, str):
+        return str(value)
+    # Escape newlines, carriage returns, tabs
+    value = value.replace('\\', '\\\\')
+    value = value.replace('\n', '\\n')
+    value = value.replace('\r', '\\r')
+    value = value.replace('\t', '\\t')
+    # Remove control characters
+    value = re.sub(r'[\x00-\x1f\x7f]', '', value)
+    return value
+
+# Usage
+print(f'[DEBUG_HYP_1] user_input: {debug_safe_string(user_input)}')
+
+# For complex objects - limit depth
+import json
+def debug_safe_json(obj, max_depth=3):
+    """Safely serialize object with depth limit"""
+    try:
+        return json.dumps(obj, default=str, indent=2)[:5000]  # Limit size
+    except Exception as e:
+        return f'<serialization error: {e}>'
+# DEBUG_HYP_1_END
+```
+
+**Go:**
+```go
+// DEBUG_HYP_1_START
+import (
+    "regexp"
+    "strings"
+)
+
+func debugSafeString(value string) string {
+    // Escape newlines and control characters
+    value = strings.ReplaceAll(value, "\\", "\\\\")
+    value = strings.ReplaceAll(value, "\n", "\\n")
+    value = strings.ReplaceAll(value, "\r", "\\r")
+    value = strings.ReplaceAll(value, "\t", "\\t")
+    // Remove control characters
+    re := regexp.MustCompile(`[\x00-\x1f\x7f]`)
+    value = re.ReplaceAllString(value, "")
+    return value
+}
+
+// Usage
+fmt.Printf("[DEBUG_HYP_1] userInput: %s\n", debugSafeString(userInput))
+// DEBUG_HYP_1_END
+```
+
+**Escaping Rules:**
+
+1. **Always escape user input**: Any variable that could contain external data
+2. **Limit output length**: Truncate long strings to prevent log flooding
+3. **Handle circular references**: Use safe serialization for objects
+4. **Remove control characters**: Strip ANSI codes and non-printable chars
+5. **Use repr/inspect for debugging**: Shows escaped strings by default
+
+**Recommended Output Limits:**
+
+| Data Type | Max Length | Truncation Strategy |
+|-----------|------------|---------------------|
+| Simple string | 500 chars | Truncate with `...` |
+| Object/JSON | 2000 chars | Truncate with `[truncated]` |
+| Array | 5 items | Show first N with count |
+| Stack trace | 10 frames | Show top N frames |
+
+---
+
+### Step 7: Generate Instrumentation Code
+
+**When**: Ready to add instrumentation to specific files and locations
+
+**Action**: Generate complete instrumentation code blocks for each hypothesis location
+
+**Instrumentation Generation Template:**
+
+```json
+{
+  "instrumentation": {
+    "hypothesisId": "HYP_1",
+    "file": "src/services/UserService.ts",
+    "insertions": [
+      {
+        "lineNumber": 45,
+        "position": "before",
+        "indentation": "    ",
+        "code": [
+          "// DEBUG_HYP_1_START",
+          "console.log('[DEBUG_HYP_1] findUser called with:', { userId });",
+          "const DEBUG_HYP_1_START_TIME = Date.now();",
+          "// DEBUG_HYP_1_END"
+        ]
+      },
+      {
+        "lineNumber": 52,
+        "position": "after",
+        "indentation": "    ",
+        "code": [
+          "// DEBUG_HYP_1_START",
+          "console.log('[DEBUG_HYP_1] findUser result:', user ? 'found' : 'null');",
+          "console.log('[DEBUG_HYP_1] findUser took:', Date.now() - DEBUG_HYP_1_START_TIME, 'ms');",
+          "// DEBUG_HYP_1_END"
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Insertion Position Types:**
+
+- `before`: Insert instrumentation before the target line
+- `after`: Insert instrumentation after the target line
+- `wrap`: Wrap the target line with start/end instrumentation
+
+---
+
+### Step 8: Update Session and Commit Instrumentation
+
+**When**: After instrumentation is added to all files
+
+**Action**: Update session file and create instrumentation commit
+
+**Session Update:**
+
+```json
+{
+  "status": "instrumented",
+  "instrumentation": {
+    "timestamp": "2026-01-31T09:00:00Z",
+    "files": [
+      {
+        "file": "src/services/UserService.ts",
+        "hypotheses": ["HYP_1", "HYP_2"],
+        "insertionCount": 4,
+        "linesAdded": 16
+      },
+      {
+        "file": "src/controllers/UserController.ts",
+        "hypotheses": ["HYP_1"],
+        "insertionCount": 2,
+        "linesAdded": 8
+      }
+    ],
+    "totalLinesAdded": 24,
+    "commitSha": "abc123def"
+  }
+}
+```
+
+**Commit Template:**
+
+```bash
+git add -A
+git commit -m "debug: Add HYP_1, HYP_2 instrumentation
+
+Session: ${SESSION_ID}
+Iteration: ${ITERATION_COUNT}
+Files instrumented:
+- src/services/UserService.ts (4 insertions)
+- src/controllers/UserController.ts (2 insertions)
+"
+```
+
+---
+
+### Instrumentation Examples
+
+#### Example 1: TypeScript Null Reference Investigation
+
+**Hypothesis:** `user.email` is null when accessed at line 45
+
+**Original Code:**
+```typescript
+async function sendWelcomeEmail(userId: string): Promise<void> {
+    const user = await userRepository.findById(userId);
+    const emailService = new EmailService();
+    await emailService.send(user.email, 'Welcome!', welcomeTemplate);
+}
+```
+
+**Instrumented Code:**
+```typescript
+async function sendWelcomeEmail(userId: string): Promise<void> {
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] sendWelcomeEmail called with userId:', userId);
+    // DEBUG_HYP_1_END
+
+    const user = await userRepository.findById(userId);
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] userRepository.findById returned:');
+    console.log('[DEBUG_HYP_1]   user:', user ? JSON.stringify(user, null, 2) : 'null');
+    console.log('[DEBUG_HYP_1]   user.email:', user?.email ?? 'undefined');
+    console.log('[DEBUG_HYP_1]   typeof user.email:', typeof user?.email);
+    // DEBUG_HYP_1_END
+
+    const emailService = new EmailService();
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] About to call emailService.send with:');
+    console.log('[DEBUG_HYP_1]   to:', user?.email ?? 'undefined');
+    // DEBUG_HYP_1_END
+
+    await emailService.send(user.email, 'Welcome!', welcomeTemplate);
+
+    // DEBUG_HYP_1_START
+    console.log('[DEBUG_HYP_1] emailService.send completed');
+    // DEBUG_HYP_1_END
+}
+```
+
+#### Example 2: Python Race Condition Investigation
+
+**Hypothesis:** Cache read returns stale data due to race with invalidation
+
+**Original Code:**
+```python
+class CacheService:
+    def get_user(self, user_id: str) -> Optional[User]:
+        cached = self.cache.get(f"user:{user_id}")
+        if cached:
+            return User.from_dict(cached)
+
+        user = self.db.find_user(user_id)
+        if user:
+            self.cache.set(f"user:{user_id}", user.to_dict())
+        return user
+```
+
+**Instrumented Code:**
+```python
+import time
+from datetime import datetime
+
+class CacheService:
+    def get_user(self, user_id: str) -> Optional[User]:
+        # DEBUG_HYP_2_START
+        _debug_hyp_2_start = time.perf_counter()
+        _debug_hyp_2_ts = datetime.utcnow().isoformat() + 'Z'
+        print(f'[DEBUG_HYP_2][{_debug_hyp_2_ts}] get_user called with user_id: {user_id}')
+        # DEBUG_HYP_2_END
+
+        cached = self.cache.get(f"user:{user_id}")
+
+        # DEBUG_HYP_2_START
+        print(f'[DEBUG_HYP_2][{datetime.utcnow().isoformat()}Z] cache.get returned: {cached is not None}')
+        if cached:
+            print(f'[DEBUG_HYP_2] cached data: {cached!r}')
+        # DEBUG_HYP_2_END
+
+        if cached:
+            # DEBUG_HYP_2_START
+            print(f'[DEBUG_HYP_2][BRANCH] Returning cached user')
+            print(f'[DEBUG_HYP_2][TIMING] Cache hit took {(time.perf_counter() - _debug_hyp_2_start) * 1000:.2f}ms')
+            # DEBUG_HYP_2_END
+            return User.from_dict(cached)
+
+        # DEBUG_HYP_2_START
+        print(f'[DEBUG_HYP_2][BRANCH] Cache miss, querying database')
+        _debug_db_start = time.perf_counter()
+        # DEBUG_HYP_2_END
+
+        user = self.db.find_user(user_id)
+
+        # DEBUG_HYP_2_START
+        print(f'[DEBUG_HYP_2] db.find_user returned: {user!r}')
+        print(f'[DEBUG_HYP_2][TIMING] DB query took {(time.perf_counter() - _debug_db_start) * 1000:.2f}ms')
+        # DEBUG_HYP_2_END
+
+        if user:
+            self.cache.set(f"user:{user_id}", user.to_dict())
+            # DEBUG_HYP_2_START
+            print(f'[DEBUG_HYP_2] Cached user data for user_id: {user_id}')
+            # DEBUG_HYP_2_END
+
+        # DEBUG_HYP_2_START
+        print(f'[DEBUG_HYP_2][TIMING] Total get_user took {(time.perf_counter() - _debug_hyp_2_start) * 1000:.2f}ms')
+        # DEBUG_HYP_2_END
+
+        return user
+```
+
+#### Example 3: Go Timeout Investigation
+
+**Hypothesis:** External API call exceeds timeout for large payloads
+
+**Original Code:**
+```go
+func (s *PaymentService) ProcessPayment(ctx context.Context, order Order) (*PaymentResult, error) {
+    payload := s.buildPayload(order)
+    resp, err := s.client.Post(ctx, "/payments", payload)
+    if err != nil {
+        return nil, fmt.Errorf("payment failed: %w", err)
+    }
+    return s.parseResponse(resp)
+}
+```
+
+**Instrumented Code:**
+```go
+import (
+    "time"
+    "encoding/json"
+)
+
+func (s *PaymentService) ProcessPayment(ctx context.Context, order Order) (*PaymentResult, error) {
+    // DEBUG_HYP_3_START
+    debugHyp3Start := time.Now()
+    fmt.Printf("[DEBUG_HYP_3][%s] ProcessPayment called\n", debugHyp3Start.Format(time.RFC3339Nano))
+    fmt.Printf("[DEBUG_HYP_3] order.ID: %s\n", order.ID)
+    fmt.Printf("[DEBUG_HYP_3] order.Items count: %d\n", len(order.Items))
+    // DEBUG_HYP_3_END
+
+    payload := s.buildPayload(order)
+
+    // DEBUG_HYP_3_START
+    payloadJson, _ := json.Marshal(payload)
+    fmt.Printf("[DEBUG_HYP_3] payload size: %d bytes\n", len(payloadJson))
+    fmt.Printf("[DEBUG_HYP_3] buildPayload took: %v\n", time.Since(debugHyp3Start))
+    apiCallStart := time.Now()
+    // DEBUG_HYP_3_END
+
+    resp, err := s.client.Post(ctx, "/payments", payload)
+
+    // DEBUG_HYP_3_START
+    apiCallDuration := time.Since(apiCallStart)
+    fmt.Printf("[DEBUG_HYP_3] API call took: %v\n", apiCallDuration)
+    if err != nil {
+        fmt.Printf("[DEBUG_HYP_3] API error: %v\n", err)
+        if ctx.Err() == context.DeadlineExceeded {
+            fmt.Printf("[DEBUG_HYP_3] Context deadline exceeded!\n")
+        }
+    } else {
+        fmt.Printf("[DEBUG_HYP_3] API response status: %d\n", resp.StatusCode)
+    }
+    // DEBUG_HYP_3_END
+
+    if err != nil {
+        return nil, fmt.Errorf("payment failed: %w", err)
+    }
+
+    result := s.parseResponse(resp)
+
+    // DEBUG_HYP_3_START
+    fmt.Printf("[DEBUG_HYP_3] Total ProcessPayment took: %v\n", time.Since(debugHyp3Start))
+    // DEBUG_HYP_3_END
+
+    return result, nil
+}
+```
+
+---
+
+### Instrumentation Rules
+
+1. **Always use markers**: Every instrumentation block must have START and END markers
+2. **Use hypothesis ID in logs**: Include `[DEBUG_HYP_N]` prefix for filtering
+3. **Match language idioms**: Use the language's natural logging approach
+4. **Preserve style**: Match indentation, quotes, and formatting
+5. **Escape user data**: Sanitize any external input before logging
+6. **Include timing for performance issues**: Add timestamps when timing is relevant
+7. **Limit output size**: Truncate large objects to prevent log flooding
+8. **Log execution paths**: Include ENTER, EXIT, BRANCH markers for flow tracing
+9. **Handle nulls safely**: Use safe navigation (`?.`, `?:`, `or`, etc.)
+10. **Avoid side effects**: Instrumentation must not change program behavior
+
+---
+
+### Proceeding to Next Phase
+
+After instrumentation is complete:
+
+1. **Session updated** with `instrumentation` object and status `instrumented`
+2. **Instrumentation commit created** with hypothesis details
+3. **All affected files contain marker comments** for cleanup
+4. **Log statements use consistent format** for parsing
+
+**Proceed to:**
+- **Reproduction Phase** to trigger the instrumented code and collect logs
+- Use reproduction steps from session to trigger the issue
+- Capture all console/log output for analysis
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
