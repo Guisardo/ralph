@@ -9757,3 +9757,466 @@ After cleanup completion:
 
 ---
 
+## Success Summary Generation Phase
+
+When debugging is complete and the fix is verified, use this template to generate a comprehensive summary for the user.
+
+### Purpose
+
+The success summary serves three critical functions:
+1. **Documentation**: Creates a record of the issue, investigation, and solution for future reference
+2. **Learning**: Helps the user and team understand root causes and best practices
+3. **Traceability**: Provides sources and verification that the fix is complete
+
+### Step 1: Review Session Context
+
+Before generating the summary, collect all context from the session file:
+
+**Required fields:**
+- `issueType`: Classification from intake
+- `reproductionSteps`: How issue was triggered
+- `hypotheses`: All hypotheses generated (confirmed and rejected)
+- `researchFindings`: Sources consulted and findings
+- `verifiedFix`: The committed fix details
+- `reproductionRuns`: Test execution logs
+
+**Verify completeness:**
+- Session status must be: `cleanup_complete`
+- All hypothesis verdicts documented (confirmed/rejected)
+- At least one hypothesis marked as `confirmed`
+- Research findings documented with sources
+- Fix verification shows `outcome: "verified"`
+
+### Step 2: Generate Root Cause Analysis Section
+
+Create a concise 3-5 line summary:
+
+```
+## Root Cause
+
+[Hypothesis #]: [Category] - [Description]
+
+**Evidence**:
+- [Key log finding 1 that confirmed this hypothesis]
+- [Key log finding 2 showing the problem]
+
+**Impact**: [Explain how this caused the reported issue]
+```
+
+**Example:**
+```
+## Root Cause
+
+Hypothesis 3: Null Reference - User object not initialized before property access
+
+**Evidence**:
+- Log shows `userService.getUser()` returned null at line 45
+- Subsequent access to `user.email` threw TypeError
+- Issue occurs 30% of the time (race condition in async initialization)
+
+**Impact**: When concurrent requests loaded user data, the cache wasn't updated before lookup, causing null dereference in 3 affected code paths
+```
+
+### Step 3: Create Research Findings Section
+
+List sources consulted and key findings:
+
+```
+## Research Findings
+
+**Sources Consulted:**
+| Source | Type | Relevance | Key Finding |
+|--------|------|-----------|------------|
+| [Official Docs](URL) | Official | High | Best practice for async initialization |
+| [GitHub Issue #12345](URL) | Community | Medium | Others encountered similar race condition |
+
+**Recommended Approach**: [From official docs/consensus]
+
+**Alternatives Considered**:
+- [Alternative 1 - why not used]
+- [Alternative 2 - why not used]
+```
+
+**Example:**
+```
+## Research Findings
+
+**Sources Consulted:**
+| Source | Type | Relevance | Key Finding |
+|--------|------|-----------|------------|
+| [Node.js Async Patterns](https://nodejs.org/en/docs/guides/blocking-vs-non-blocking/) | Official | High | Use async/await or promises for consistency |
+| [Express.js Middleware Guide](https://expressjs.com/en/guide/using-middleware.html) | Official | High | Initialize dependencies in middleware before routes |
+| [GitHub: express-cache-race](https://github.com/example/issue#1234) | Community | Medium | Others used async/await to prevent race |
+
+**Recommended Approach**: Use async/await in middleware to ensure dependencies initialized before route handlers execute
+
+**Alternatives Considered**:
+- Callbacks (error-prone, callback hell)
+- Promises without await (doesn't guarantee order)
+- Singleton patterns (still vulnerable to races)
+```
+
+### Step 4: Add Fix Applied Section
+
+Document what was changed and why:
+
+```
+## Fix Applied
+
+**Files Modified**: [list files]
+
+**Before:**
+\`\`\`[language]
+[Original problematic code snippet - max 15 lines]
+\`\`\`
+
+**After:**
+\`\`\`[language]
+[Fixed code snippet - max 15 lines]
+\`\`\`
+
+**What Changed**: [1-2 sentences explaining the fix]
+
+**Why This Solves It**: [Explain how it addresses the root cause]
+```
+
+**Example:**
+```
+## Fix Applied
+
+**Files Modified**: src/middleware/userLoader.ts, src/controllers/userController.ts
+
+**Before:**
+\`\`\`typescript
+// Initiating user fetch but not awaiting
+const userService = new UserService();
+userService.loadUser(userId); // Fire and forget
+
+app.get('/users/:id', (req, res) => {
+  const user = userService.getUser(req.params.id); // May return null
+  res.json(user.profile); // Crashes if user is null
+});
+\`\`\`
+
+**After:**
+\`\`\`typescript
+// Properly await user initialization in middleware
+const userService = new UserService();
+
+app.use(async (req, res, next) => {
+  await userService.loadUser(req.userId); // Wait for completion
+  next();
+});
+
+app.get('/users/:id', (req, res) => {
+  const user = userService.getUser(req.params.id); // Guaranteed initialized
+  res.json(user.profile); // Safe to access
+});
+\`\`\`
+
+**What Changed**: Added `await` to userService.loadUser() in middleware and removed concurrent race condition
+
+**Why This Solves It**: Ensures user data is fully initialized before any route handler accesses it, eliminating the null reference that occurred during concurrent requests
+```
+
+### Step 5: Document Hypotheses Tested
+
+Create a concise table of all hypotheses:
+
+```
+## Hypotheses Tested
+
+| # | Category | Status | Confidence | Key Finding |
+|---|----------|--------|------------|------------|
+| 1 | [Type] | Confirmed/Rejected | 0.85 | [Brief finding] |
+| 2 | [Type] | Rejected | 0.15 | [Why ruled out] |
+| 3 | [Type] | Confirmed | 0.92 | [Brief finding] |
+```
+
+**Example:**
+```
+## Hypotheses Tested
+
+| # | Category | Status | Evidence |
+|---|----------|--------|----------|
+| 1 | Null Reference (cache miss) | Rejected | Logs showed data in cache, issue persisted |
+| 2 | Race Condition (init order) | **Confirmed** | Concurrent requests hit getUser() before loadUser() completed |
+| 3 | Logic Error (wrong comparison) | Rejected | Comparison logic was correct |
+| 4 | Configuration (wrong env var) | Rejected | Environment variables correct across all test runs |
+```
+
+### Step 6: Add Verification Results Section
+
+Document how the fix was verified:
+
+```
+## Verification Results
+
+**Test Location**: [path to test file if automated]
+
+**Method**: Automated / Manual
+
+**Verification Details**:
+- [Run 1]: ✓ Pass (with details)
+- [Run 2]: ✓ Pass (with details)
+- [Run 3]: ✓ Pass (optional, for flaky issues: "5 consecutive passes")
+
+**Logs Comparison**:
+- ✓ Original error messages gone
+- ✓ No new errors introduced
+- ✓ Instrumentation shows expected execution path
+- ✓ Performance baseline maintained
+```
+
+**Example:**
+```
+## Verification Results
+
+**Test Location**: test/debug/reproduction-HYP_2.test.ts
+
+**Method**: Automated (Jest)
+
+**Verification Details**:
+- Run 1: ✓ Pass - 50 concurrent requests, all resolved correctly
+- Run 2: ✓ Pass - 50 concurrent requests, all resolved correctly
+- Run 3: ✓ Pass - 50 concurrent requests, all resolved correctly
+- Run 4: ✓ Pass - 100 concurrent requests, no failures
+- Run 5: ✓ Pass - 100 concurrent requests, no failures
+
+**Logs Comparison**:
+- ✓ "Cannot read property 'email' of null" error eliminated
+- ✓ No new errors introduced
+- ✓ All 50 requests completed successfully
+- ✓ Response time: 45ms average (baseline: 43ms, acceptable)
+```
+
+### Step 7: Summary Structure Template
+
+Create the final summary document with this structure:
+
+```markdown
+# Debug Session Summary
+
+**Session ID**: [session-id]
+**Date**: [date]
+**Total Time**: [duration]
+**Status**: ✓ Complete
+
+## Root Cause
+[From Step 2]
+
+## Research Findings
+[From Step 3]
+
+## Fix Applied
+[From Step 4]
+
+## Hypotheses Tested
+[From Step 5]
+
+## Verification Results
+[From Step 6]
+
+## Key Learnings
+
+- Pattern identified: [General lesson for future debugging]
+- Prevention: [How to avoid this in future]
+- Testing: [Improved test coverage recommendation]
+
+---
+
+**Session Files**:
+- Session record: .claude/debug-sessions/[session-id].json
+- Instrumentation cleanup: Reverted in commit [SHA]
+- Fix applied: Commit [SHA]
+```
+
+### Step 8: Enforce Size Limit
+
+**Summary must stay under 50 lines** (excluding code blocks):
+
+- Root Cause: 3-5 lines
+- Research: 8-10 lines
+- Fix Applied: 12-15 lines (including before/after snippets with syntax highlighting)
+- Hypotheses: 5-7 lines (table format)
+- Verification: 6-8 lines
+- Learnings: 4-5 lines
+
+**Size reduction strategies:**
+- Use tables to compress hypothesis data
+- Limit code snippets to problem areas only
+- Use links to external docs instead of quoting
+- Combine related findings into single points
+
+### Step 9: Update Session and Cleanup
+
+After generating the summary:
+
+1. **Save summary** to `.claude/debug-sessions/SUMMARY-[session-id].md`
+2. **Update session file** with final status: `success`
+3. **Display summary** to user in formatted markdown
+4. **Delete session JSON** file after user confirmation
+5. **Return exit code**: 0 (success)
+
+**Session update before deletion:**
+```json
+{
+  "sessionId": "[session-id]",
+  "status": "success",
+  "completedAt": "2024-01-31T10:45:00Z",
+  "debugSummary": {
+    "issueCause": "[Confirmed hypothesis #N]",
+    "fixApplied": "[Brief description]",
+    "hypothesesTested": 4,
+    "hypothesesConfirmed": 1,
+    "iterationCount": 2,
+    "totalTime": "14 minutes"
+  }
+}
+```
+
+### Success Summary Rules
+
+1. **Completeness**: Always include root cause, fix, and verification
+2. **Clarity**: Use markdown formatting for readability
+3. **Evidence**: Every claim must reference logs or test results
+4. **Sources**: Cite all research sources with URLs
+5. **Code snippets**: Show minimal before/after that demonstrates the issue
+6. **Brevity**: Under 50 lines enforces concise communication
+7. **Learnings**: Include 3-4 general lessons for future prevention
+8. **Traceability**: Link to session ID, commits, and test locations
+9. **Accessibility**: Avoid jargon, explain technical terms
+10. **Completeness before display**: Generate full summary before showing to user
+
+### Success Summary Examples
+
+#### Example 1: TypeScript Null Reference (Runtime Error)
+
+```
+# Debug Session Summary
+
+**Session ID**: sess_1704067800_a1b2c3d4
+**Date**: 2024-01-31
+**Status**: ✓ Complete
+
+## Root Cause
+
+Hypothesis 2: Null Reference - UserService async initialization race condition
+
+**Evidence**:
+- Concurrent requests accessed user data before loadUser() completed
+- Logs show getUser() returned null 30% of the time under load
+- Issue disappeared when requests serialized
+
+**Impact**: API returned 500 errors when multiple requests hit same endpoint simultaneously
+
+## Research Findings
+
+| Source | Type | Finding |
+|--------|------|---------|
+| [Node.js async docs](https://nodejs.org) | Official | Always await async initialization |
+| [GitHub issue #456](https://github.com/example) | Community | Others solved with middleware |
+
+**Solution**: Move async initialization to middleware with await
+
+## Fix Applied
+
+**Before**:
+\`\`\`typescript
+userService.loadUser(id); // Not awaited
+const user = userService.getUser(id); // May be null
+\`\`\`
+
+**After**:
+\`\`\`typescript
+await userService.loadUser(id); // Awaited
+const user = userService.getUser(id); // Guaranteed initialized
+\`\`\`
+
+## Hypotheses Tested
+
+| # | Type | Status |
+|---|------|--------|
+| 1 | Cache miss | Rejected |
+| 2 | Race condition | ✓ Confirmed |
+| 3 | Config error | Rejected |
+
+## Verification Results
+
+**Test**: 100 concurrent requests - ✓ All succeeded
+**Time**: 5 runs, 5/5 passed
+
+## Key Learnings
+
+- Always use await/promises for critical initialization
+- Test with concurrent load early
+- Add markers for initialization completion
+```
+
+#### Example 2: Python Race Condition (Intermittent Issue)
+
+```
+# Debug Session Summary
+
+**Session ID**: sess_1704068200_x9y8z7w6
+**Date**: 2024-01-31
+**Status**: ✓ Complete (flaky, verified 5 consecutive passes)
+
+## Root Cause
+
+Hypothesis 3: Race Condition - Missing lock on shared cache dictionary
+
+**Evidence**:
+- Multi-threaded writes to cache_dict without synchronization
+- Logs showed KeyError 2-3% of the time under load
+- Issue was deterministic when serialized
+
+**Impact**: Intermittent crashes in cache layer affecting 0.1% of requests
+
+## Research Findings
+
+| Source | Key Finding |
+|--------|------------|
+| [Python threading docs](https://docs.python.org) | Use threading.Lock for shared state |
+
+**Solution**: Add threading.Lock around cache operations
+
+## Fix Applied
+
+**Before**:
+\`\`\`python
+cache_dict[key] = value  # Not thread-safe
+\`\`\`
+
+**After**:
+\`\`\`python
+with cache_lock:
+    cache_dict[key] = value  # Thread-safe
+\`\`\`
+
+## Verification Results
+
+**Test**: test/debug/reproduction-HYP_3.py
+**Flaky Verification**: 5 consecutive successful runs (confirmed intermittent is fixed)
+
+## Key Learnings
+
+- Thread safety: Always protect mutable shared state
+- Flaky issue verification: 5 passes required, not 1
+- Testing: Add stress tests with 10+ threads before release
+```
+
+---
+
+### Proceeding After Summary
+
+After generating and displaying the success summary:
+
+1. User reviews summary and learnings
+2. User confirms debugging is complete
+3. Delete session file: `.claude/debug-sessions/[session-id].json`
+4. Keep summary file for reference: `.claude/debug-sessions/SUMMARY-[session-id].md`
+5. **Debugging workflow complete** ✓
+
+---
+
