@@ -193,6 +193,548 @@ Show the user a summary and confirm before proceeding:
 
 ---
 
+## Session Persistence Workflow Template
+
+This template defines how debug session state is created, maintained, updated, and cleaned up throughout the debugging process.
+
+### Session Lifecycle Overview
+
+```
+1. Initialization → Create session file with initial state
+2. Git Capture → Record commit before any changes
+3. Updates → Append state after each major step
+4. Completion → Delete session file after success
+5. Rollback → Delete session file after full rollback
+```
+
+### Step 1: Session File Initialization
+
+**When**: Immediately after completing Step 7 of Intake Phase (before Step 8 confirmation)
+
+**Action**: Create the session directory and file
+
+```bash
+# Create debug sessions directory if it doesn't exist
+mkdir -p .claude/debug-sessions
+
+# Generate session ID format: sess_<timestamp>_<random_hex>
+# Example: sess_1738308000_a3f9e2c1
+SESSION_ID="sess_$(date +%s)_$(openssl rand -hex 4)"
+
+# Create session file
+touch ".claude/debug-sessions/${SESSION_ID}.json"
+```
+
+**Template for initial session content**:
+
+```json
+{
+  "sessionId": "sess_<timestamp>_<random>",
+  "startTime": "<ISO 8601 timestamp, e.g., 2025-01-31T10:30:00Z>",
+  "initialCommit": null,
+  "issueType": "<from Intake Step 1>",
+  "reproductionSteps": [
+    "<from Intake Step 2>"
+  ],
+  "expectedBehavior": "<from Intake Step 3>",
+  "actualBehavior": "<from Intake Step 3>",
+  "errorMessages": [
+    "<from Intake Step 4>"
+  ],
+  "isFlaky": true/false,
+  "successCount": 1,
+  "environment": {
+    "language": "<detected or user-provided>",
+    "framework": "<detected or user-provided>",
+    "os": "<detected or user-provided>",
+    "cwd": "<current working directory>"
+  },
+  "additionalContext": "<from Intake Step 6>",
+  "hypotheses": [],
+  "logs": {
+    "instrumentation": [],
+    "reproduction": []
+  },
+  "findings": [],
+  "iterationCount": 0,
+  "maxIterations": 5,
+  "researchFindings": [],
+  "fixesAttempted": [],
+  "commits": {
+    "instrumentation": [],
+    "fixes": [],
+    "cleanup": []
+  },
+  "status": "initialized"
+}
+```
+
+### Step 2: Capture Initial Git State
+
+**When**: Immediately after session file creation, before any code changes
+
+**Action**: Record the current git commit hash
+
+```bash
+# Capture current HEAD commit
+INITIAL_COMMIT=$(git rev-parse HEAD)
+
+# Update session file with initial commit
+# Use jq or similar JSON tool to update the initialCommit field
+```
+
+**Why this matters**: This commit hash is the rollback point if debugging fails. All changes made during debugging are relative to this commit.
+
+**Template update**:
+
+```json
+{
+  "sessionId": "sess_123abc",
+  "startTime": "2025-01-31T10:30:00Z",
+  "initialCommit": "abc1234def5678",  // ← Updated with git HEAD
+  "status": "git_captured",
+  // ... rest of session data
+}
+```
+
+### Step 3: Session Updates During Debug Workflow
+
+**When**: After each major workflow step (hypothesis generation, instrumentation, fix application, etc.)
+
+**What to update**: Append new state to appropriate arrays and update status
+
+#### After Hypothesis Generation
+
+```json
+{
+  // ... existing fields
+  "hypotheses": [
+    {
+      "id": "HYP_1",
+      "description": "Memory buffer not sized correctly for large uploads",
+      "files": ["src/upload.ts", "src/memory/buffer.ts"],
+      "lineRanges": {
+        "src/upload.ts": "45-60",
+        "src/memory/buffer.ts": "10-30"
+      },
+      "confidence": 0.85,
+      "status": "pending",
+      "generatedAt": "2025-01-31T10:32:00Z"
+    },
+    {
+      "id": "HYP_2",
+      "description": "Stream pipeline closes prematurely on network timeout",
+      "files": ["src/upload.ts", "src/network/stream.ts"],
+      "lineRanges": {
+        "src/upload.ts": "70-85",
+        "src/network/stream.ts": "120-150"
+      },
+      "confidence": 0.65,
+      "status": "pending",
+      "generatedAt": "2025-01-31T10:32:00Z"
+    }
+  ],
+  "iterationCount": 1,
+  "status": "hypothesis_generated"
+}
+```
+
+#### After Instrumentation
+
+```json
+{
+  // ... existing fields
+  "logs": {
+    "instrumentation": [
+      {
+        "hypothesisId": "HYP_1",
+        "files": ["src/upload.ts", "src/memory/buffer.ts"],
+        "markerComments": [
+          "// DEBUG_HYP_1_START",
+          "// DEBUG_HYP_1_END"
+        ],
+        "instrumentedAt": "2025-01-31T10:35:00Z"
+      }
+    ],
+    "reproduction": []
+  },
+  "commits": {
+    "instrumentation": [
+      {
+        "commit": "def5678abc9012",
+        "hypothesisId": "HYP_1",
+        "message": "debug: Add instrumentation for HYP_1",
+        "timestamp": "2025-01-31T10:36:00Z"
+      }
+    ],
+    "fixes": [],
+    "cleanup": []
+  },
+  "status": "instrumented"
+}
+```
+
+#### After Log Analysis
+
+```json
+{
+  // ... existing fields
+  "hypotheses": [
+    {
+      "id": "HYP_1",
+      "status": "confirmed",  // ← Updated from "pending"
+      "confirmedAt": "2025-01-31T10:40:00Z",
+      "evidence": "Log shows buffer allocation of 10MB but file size is 500MB"
+    },
+    {
+      "id": "HYP_2",
+      "status": "rejected",  // ← Updated from "pending"
+      "rejectedAt": "2025-01-31T10:40:00Z",
+      "evidence": "Logs show stream closes normally after completion, no premature closure"
+    }
+  ],
+  "findings": [
+    {
+      "hypothesisId": "HYP_1",
+      "finding": "Buffer overflow detected: allocated 10MB, received 500MB",
+      "evidence": "src/memory/buffer.ts:15 log output: 'HYP_1: bufferSize=10485760, fileSize=524288000'",
+      "timestamp": "2025-01-31T10:40:00Z"
+    }
+  ],
+  "logs": {
+    "instrumentation": [...],
+    "reproduction": [
+      {
+        "hypothesisId": "HYP_1",
+        "output": "<captured log output from test run>",
+        "executedAt": "2025-01-31T10:38:00Z"
+      }
+    ]
+  },
+  "status": "hypothesis_confirmed"
+}
+```
+
+#### After Web Research
+
+```json
+{
+  // ... existing fields
+  "researchFindings": [
+    {
+      "hypothesisId": "HYP_1",
+      "query": "Node.js buffer large file upload memory allocation best practice",
+      "sources": [
+        {
+          "title": "Handling Large File Uploads in Node.js",
+          "url": "https://nodejs.org/en/docs/guides/large-file-upload",
+          "type": "official_docs",
+          "relevance": "high",
+          "keyPoints": [
+            "Use streaming APIs instead of loading entire file into memory",
+            "Configure multer maxFileSize and buffer limits",
+            "Implement chunked uploads for files > 100MB"
+          ]
+        }
+      ],
+      "recommendedApproach": "Implement streaming upload with chunked processing",
+      "securityConsiderations": "Validate chunk sizes to prevent DoS attacks",
+      "deprecatedSolutions": ["Loading entire file into Buffer"],
+      "researchedAt": "2025-01-31T10:42:00Z"
+    }
+  ],
+  "status": "research_complete"
+}
+```
+
+#### After Fix Application
+
+```json
+{
+  // ... existing fields
+  "fixesAttempted": [
+    {
+      "hypothesisId": "HYP_1",
+      "description": "Implemented streaming upload with 10MB chunk processing",
+      "files": ["src/upload.ts", "src/memory/buffer.ts"],
+      "approach": "Replaced Buffer.from() with stream pipeline, added chunk size configuration",
+      "researchBased": true,
+      "appliedAt": "2025-01-31T10:45:00Z"
+    }
+  ],
+  "commits": {
+    "instrumentation": [...],
+    "fixes": [
+      {
+        "commit": "789abc012def345",
+        "hypothesisId": "HYP_1",
+        "message": "fix: Implement streaming upload for large files (HYP_1)",
+        "timestamp": "2025-01-31T10:46:00Z"
+      }
+    ],
+    "cleanup": []
+  },
+  "status": "fix_applied"
+}
+```
+
+#### After Fix Verification (Success)
+
+```json
+{
+  // ... existing fields
+  "fixesAttempted": [
+    {
+      "hypothesisId": "HYP_1",
+      "description": "Implemented streaming upload with 10MB chunk processing",
+      "verificationStatus": "success",  // ← Added
+      "verificationOutput": "Test passed: 500MB file uploaded successfully without crash",
+      "verifiedAt": "2025-01-31T10:50:00Z"
+    }
+  ],
+  "status": "fix_verified"
+}
+```
+
+#### After Fix Verification (Failure - Rollback)
+
+```json
+{
+  // ... existing fields
+  "fixesAttempted": [
+    {
+      "hypothesisId": "HYP_1",
+      "description": "Implemented streaming upload with 10MB chunk processing",
+      "verificationStatus": "failed",  // ← Fix didn't work
+      "verificationOutput": "Test failed: Still crashes with memory error",
+      "verifiedAt": "2025-01-31T10:50:00Z",
+      "rolledBack": true,
+      "rollbackCommit": "def5678abc9012",  // ← Rolled back to instrumentation commit
+      "rolledBackAt": "2025-01-31T10:51:00Z"
+    }
+  ],
+  "iterationCount": 2,  // ← Increment for next iteration
+  "status": "fix_rolled_back"
+}
+```
+
+#### After Cleanup (Success Path)
+
+```json
+{
+  // ... existing fields
+  "commits": {
+    "instrumentation": [...],
+    "fixes": [...],
+    "cleanup": [
+      {
+        "commit": "012def345abc678",
+        "message": "chore: Remove debug instrumentation for HYP_1",
+        "filesAffected": ["src/upload.ts", "src/memory/buffer.ts"],
+        "timestamp": "2025-01-31T10:55:00Z"
+      }
+    ]
+  },
+  "status": "cleanup_complete"
+}
+```
+
+### Step 4: Session Deletion After Successful Completion
+
+**When**: After cleanup commit succeeds and success summary is generated
+
+**Action**: Delete the session file
+
+```bash
+# Remove session file
+rm ".claude/debug-sessions/${SESSION_ID}.json"
+```
+
+**Why**: Session state is no longer needed after successful completion. All changes are committed and the issue is resolved.
+
+### Step 5: Session Deletion After Rollback (Max Iterations)
+
+**When**: After complete rollback to initial commit when max iterations (5) are reached
+
+**Action**:
+1. Create failure summary file
+2. Delete session file
+
+```bash
+# Create failure summary document
+cat > ".claude/debug-sessions/FAILURE-${SESSION_ID}.md" << EOF
+# Debug Session Failure: ${SESSION_ID}
+
+## Original Issue
+<issue description from session>
+
+## Hypotheses Tested
+<list all hypotheses with confidence scores and status>
+
+## Research Findings
+<summarize research from all iterations>
+
+## Fixes Attempted
+<list all fixes with verification results>
+
+## Why Each Fix Failed
+<explain failure reasons>
+
+## Final State
+- Initial Commit: <hash>
+- Iterations Completed: 5
+- Status: Failed - max iterations reached
+
+## Next Steps
+<suggestions for manual debugging based on evidence>
+EOF
+
+# Delete session file after creating failure summary
+rm ".claude/debug-sessions/${SESSION_ID}.json"
+```
+
+**Why**: Failure context is preserved in markdown format for human review, but active session state is cleaned up.
+
+### Session Schema Reference
+
+Complete session file schema with all fields:
+
+```typescript
+interface DebugSession {
+  // Identity & Metadata
+  sessionId: string;                    // sess_<timestamp>_<random>
+  startTime: string;                    // ISO 8601
+  initialCommit: string | null;         // git HEAD before changes
+  status: SessionStatus;                // Current workflow state
+
+  // Issue Information
+  issueType: string;
+  reproductionSteps: string[];
+  expectedBehavior: string;
+  actualBehavior: string;
+  errorMessages: string[];
+  isFlaky: boolean;
+  successCount: number;                 // 1 for deterministic, N for flaky
+
+  // Environment
+  environment: {
+    language: string;
+    framework: string;
+    os: string;
+    cwd: string;
+  };
+  additionalContext: string;
+
+  // Debug State
+  hypotheses: Hypothesis[];
+  logs: {
+    instrumentation: InstrumentationLog[];
+    reproduction: ReproductionLog[];
+  };
+  findings: Finding[];
+  iterationCount: number;               // Current iteration (0-5)
+  maxIterations: number;                // Always 5
+
+  // Research & Fixes
+  researchFindings: ResearchFinding[];
+  fixesAttempted: FixAttempt[];
+
+  // Git Tracking
+  commits: {
+    instrumentation: CommitRecord[];
+    fixes: CommitRecord[];
+    cleanup: CommitRecord[];
+  };
+}
+
+type SessionStatus =
+  | "initialized"              // Session created, awaiting git capture
+  | "git_captured"             // Initial commit recorded
+  | "hypothesis_generated"     // Hypotheses generated for current iteration
+  | "instrumented"             // Debug logging added
+  | "reproduction_run"         // Test executed, logs captured
+  | "hypothesis_confirmed"     // At least one hypothesis confirmed by logs
+  | "hypothesis_rejected"      // All hypotheses rejected, need new iteration
+  | "research_complete"        // Web research finished
+  | "fix_applied"              // Fix committed
+  | "fix_verified"             // Fix verified successful
+  | "fix_rolled_back"          // Fix failed, rolled back to instrumentation
+  | "cleanup_complete"         // All instrumentation removed
+  | "success"                  // Issue resolved
+  | "failed"                   // Max iterations reached without success
+```
+
+### Session File Access Patterns
+
+**Reading session during workflow**:
+
+```bash
+# Load current session state
+SESSION_DATA=$(cat ".claude/debug-sessions/${SESSION_ID}.json")
+```
+
+**Updating session during workflow**:
+
+```bash
+# Update session with new data (using jq or similar)
+jq '.status = "hypothesis_generated" | .iterationCount = 1' \
+  ".claude/debug-sessions/${SESSION_ID}.json" > temp.json
+mv temp.json ".claude/debug-sessions/${SESSION_ID}.json"
+```
+
+**Listing active sessions** (for resume capability):
+
+```bash
+# Show all active debug sessions
+ls -1 .claude/debug-sessions/*.json 2>/dev/null || echo "No active sessions"
+```
+
+### Resume Capability Template
+
+If a user wants to resume a previous session:
+
+```bash
+# User provides: /debug resume sess_123abc
+
+# 1. Verify session file exists
+if [ ! -f ".claude/debug-sessions/sess_123abc.json" ]; then
+  echo "Error: Session sess_123abc not found"
+  exit 1
+fi
+
+# 2. Load session state
+SESSION_DATA=$(cat ".claude/debug-sessions/sess_123abc.json")
+
+# 3. Display session summary
+echo "Resuming debug session: sess_123abc"
+echo "Started: <startTime from session>"
+echo "Issue: <issueType from session>"
+echo "Current Status: <status from session>"
+echo "Iteration: <iterationCount from session> of <maxIterations>"
+
+# 4. Continue from current status
+# - If status = "instrumented": proceed to reproduction
+# - If status = "fix_applied": proceed to verification
+# - etc.
+```
+
+### Important Notes
+
+1. **Always update session before git commits**: Update session state before making commits so commit hashes can be tracked
+
+2. **Atomic updates**: When updating session, write to temp file first, then move to avoid corruption:
+   ```bash
+   jq '.field = "value"' session.json > session.tmp && mv session.tmp session.json
+   ```
+
+3. **Validate session integrity**: Before each phase, verify session file is valid JSON and contains required fields
+
+4. **Session cleanup is mandatory**: ALWAYS delete session files after completion or rollback to avoid stale state
+
+5. **Timestamps use ISO 8601**: All timestamps in session must be ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
