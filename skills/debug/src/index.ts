@@ -40,3 +40,10 @@ export type {
   CodeAnalysisContext,
   HypothesisGeneratorConfig,
 } from './HypothesisGenerator';
+
+export { LoggingInfrastructure } from './LoggingInfrastructure';
+export type {
+  LoggingFramework,
+  LogLocation,
+  LoggingReport,
+} from './LoggingInfrastructure';
