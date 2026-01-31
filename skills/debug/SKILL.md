@@ -3821,6 +3821,646 @@ After instrumentation is complete:
 
 ---
 
+## Issue Reproduction Workflow Template
+
+After instrumentation is complete, the next step is to reproduce the issue to capture debug logs. This template guides systematic reproduction through automated tests or manual execution.
+
+---
+
+### Overview
+
+The reproduction workflow has two paths:
+
+1. **Automated Reproduction**: When the issue can be triggered via existing tests or generated test cases
+2. **Manual Reproduction**: When the issue requires user interaction, external services, or complex environment setup
+
+The goal is to execute the instrumented code paths and capture all log output for hypothesis verification.
+
+---
+
+### Step 1: Test Suite Detection
+
+Identify existing testing infrastructure to determine automation feasibility.
+
+#### Test Framework Detection Commands
+
+**JavaScript/TypeScript:**
+```bash
+# Check for Jest
+grep -r "jest" package.json
+ls -la jest.config.* 2>/dev/null
+
+# Check for Mocha
+grep -r "mocha" package.json
+ls -la .mocharc.* test/mocha.opts 2>/dev/null
+
+# Check for Vitest
+grep -r "vitest" package.json
+ls -la vitest.config.* 2>/dev/null
+
+# Check for Cypress
+grep -r "cypress" package.json
+ls -la cypress.config.* 2>/dev/null
+```
+
+**Python:**
+```bash
+# Check for pytest
+grep -r "pytest" requirements.txt pyproject.toml setup.py
+ls -la pytest.ini conftest.py 2>/dev/null
+
+# Check for unittest
+find . -name "test_*.py" -o -name "*_test.py"
+
+# Check for nose
+grep -r "nose" requirements.txt setup.py
+```
+
+**Go:**
+```bash
+# Go has built-in testing
+find . -name "*_test.go"
+ls -la go.mod 2>/dev/null
+```
+
+**Java/Kotlin:**
+```bash
+# Check for JUnit
+grep -r "junit" pom.xml build.gradle build.gradle.kts
+find . -path "*/test/*" -name "*.java" -o -name "*.kt"
+
+# Check for TestNG
+grep -r "testng" pom.xml build.gradle
+```
+
+**Ruby:**
+```bash
+# Check for RSpec
+grep -r "rspec" Gemfile
+ls -la .rspec spec/ 2>/dev/null
+
+# Check for Minitest
+grep -r "minitest" Gemfile
+find . -path "*/test/*" -name "*_test.rb"
+```
+
+#### Test Detection Schema
+
+Store detected test infrastructure in session:
+
+```json
+{
+  "testInfrastructure": {
+    "hasTests": true,
+    "framework": "jest",
+    "testCommand": "npm test",
+    "testFiles": ["src/__tests__/user.test.ts", "src/__tests__/api.test.ts"],
+    "canAutomate": true,
+    "automationStrategy": "generate_test_case",
+    "reason": "Jest configured, TypeScript project, API endpoint can be tested in isolation"
+  }
+}
+```
+
+**Fields:**
+- `hasTests` (boolean): Whether test infrastructure exists
+- `framework` (string): Detected test framework name
+- `testCommand` (string): Command to run tests
+- `testFiles` (array): List of existing test file paths
+- `canAutomate` (boolean): Whether issue can be reproduced via automated test
+- `automationStrategy` (string): `generate_test_case`, `use_existing_test`, or `manual_reproduction`
+- `reason` (string): Explanation of automation decision
+
+---
+
+### Step 2: Determine Automation Feasibility
+
+Analyze the issue type and reproduction steps to decide between automated and manual reproduction.
+
+#### Automation Feasibility Decision Tree
+
+**Can Automate If:**
+1. **API/Backend Issue**: HTTP endpoints can be called with `fetch`, `axios`, or test client
+2. **Pure Function Issue**: Logic bugs in functions that don't require external state
+3. **Database Issue**: Can mock database or use test database
+4. **CLI Tool Issue**: Can execute command and capture output
+5. **Existing Test Failure**: Issue reproduces via existing failing test
+
+**Cannot Automate If:**
+1. **UI Issue**: Requires browser interaction (clicks, form input, visual verification)
+   - *Exception*: Can automate with Selenium/Playwright if available
+2. **External Service Issue**: Requires third-party API that can't be mocked
+3. **Environment-Specific**: Requires production data, specific hardware, or network conditions
+4. **User Flow Issue**: Requires complex multi-step user interactions across multiple pages
+5. **Timing-Dependent**: Requires specific race conditions or delays hard to simulate
+
+#### Automation Decision Prompt
+
+For each hypothesis, ask:
+
+1. **What code paths need to execute?** (Check if they're in instrumented files)
+2. **What inputs trigger the issue?** (Check if inputs can be provided programmatically)
+3. **What external dependencies exist?** (Check if they can be mocked or stubbed)
+4. **Can the issue be reproduced in isolation?** (Check if minimal test case is possible)
+
+**Example Decision:**
+
+```
+Issue: "POST /api/users with null email returns 500 instead of 400"
+
+Analysis:
+- Code paths: UserController.create (instrumented ✓)
+- Inputs: HTTP POST request with JSON body (programmable ✓)
+- External dependencies: Database (can use test DB or mock ✓)
+- Isolation: Yes, single endpoint test (✓)
+
+Decision: AUTOMATE with generated test case
+```
+
+---
+
+### Step 3A: Automated Test Generation (If Automation Feasible)
+
+Generate a test case that reproduces the issue and captures logs.
+
+#### Test Case Template
+
+**JavaScript/TypeScript (Jest):**
+
+```typescript
+// test/debug/reproduction-HYP_1.test.ts
+// AUTO-GENERATED DEBUG TEST for Hypothesis 1
+// DO NOT COMMIT - This is a temporary debug reproduction test
+
+import { testClient } from '../helpers/testClient';
+import { setupTestDb, teardownTestDb } from '../helpers/testDb';
+
+describe('Debug Reproduction: HYP_1', () => {
+  beforeAll(async () => {
+    await setupTestDb();
+  });
+
+  afterAll(async () => {
+    await teardownTestDb();
+  });
+
+  it('reproduces issue: POST /api/users with null email', async () => {
+    // Reproduction step from session
+    const response = await testClient
+      .post('/api/users')
+      .send({ name: 'Test User', email: null });
+
+    // Capture response for analysis
+    console.log('[DEBUG_REPRO] Response status:', response.status);
+    console.log('[DEBUG_REPRO] Response body:', JSON.stringify(response.body));
+
+    // Expected behavior assertion (may fail - that's the point)
+    // expect(response.status).toBe(400);  // Commented out to capture logs even on failure
+  });
+});
+```
+
+**Python (pytest):**
+
+```python
+# test/debug/test_reproduction_hyp_1.py
+# AUTO-GENERATED DEBUG TEST for Hypothesis 1
+# DO NOT COMMIT - This is a temporary debug reproduction test
+
+import pytest
+import logging
+from app import create_app
+from test.helpers import setup_test_db, teardown_test_db
+
+logger = logging.getLogger(__name__)
+
+@pytest.fixture(scope="module")
+def client():
+    app = create_app(config="testing")
+    setup_test_db()
+    yield app.test_client()
+    teardown_test_db()
+
+def test_reproduce_null_email_issue(client):
+    """Reproduces issue: POST /api/users with null email"""
+
+    # Reproduction step from session
+    response = client.post('/api/users', json={
+        'name': 'Test User',
+        'email': None
+    })
+
+    # Capture response for analysis
+    logger.info(f"[DEBUG_REPRO] Response status: {response.status_code}")
+    logger.info(f"[DEBUG_REPRO] Response body: {response.get_json()}")
+
+    # Expected behavior assertion (may fail - that's the point)
+    # assert response.status_code == 400  # Commented out to capture logs even on failure
+```
+
+**Go (testing):**
+
+```go
+// test/debug/reproduction_hyp_1_test.go
+// AUTO-GENERATED DEBUG TEST for Hypothesis 1
+// DO NOT COMMIT - This is a temporary debug reproduction test
+
+package debug_test
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+    "yourapp/api"
+)
+
+func TestReproduceNullEmailIssue(t *testing.T) {
+    // Setup test server
+    router := api.SetupRouter()
+    server := httptest.NewServer(router)
+    defer server.Close()
+
+    // Reproduction step from session
+    payload := map[string]interface{}{
+        "name":  "Test User",
+        "email": nil,
+    }
+    body, _ := json.Marshal(payload)
+
+    resp, err := http.Post(server.URL+"/api/users", "application/json", bytes.NewBuffer(body))
+    if err != nil {
+        t.Fatalf("Request failed: %v", err)
+    }
+    defer resp.Body.Close()
+
+    // Capture response for analysis
+    t.Logf("[DEBUG_REPRO] Response status: %d", resp.StatusCode)
+    var respBody map[string]interface{}
+    json.NewDecoder(resp.Body).Decode(&respBody)
+    t.Logf("[DEBUG_REPRO] Response body: %+v", respBody)
+
+    // Expected behavior assertion (may fail - that's the point)
+    // assert.Equal(t, 400, resp.StatusCode)  // Commented out to capture logs even on failure
+}
+```
+
+#### Test Generation Rules
+
+1. **File naming**: `test/debug/reproduction-HYP_<N>.<ext>` or `test_reproduction_hyp_<N>.<ext>`
+2. **Test isolation**: Each hypothesis gets its own test file for clarity
+3. **Setup/teardown**: Use test framework's setup/teardown for database/state management
+4. **Log markers**: Prefix reproduction logs with `[DEBUG_REPRO]` for identification
+5. **Assertion strategy**: Comment out assertions to allow log capture even when test fails
+6. **DO NOT COMMIT marker**: Add prominent comment that this is temporary debug code
+7. **Reproduction steps**: Translate session reproduction steps into test code
+8. **Capture output**: Log response status, body, and any relevant state
+
+---
+
+### Step 3B: Manual Reproduction Script (If Automation Not Feasible)
+
+Generate a step-by-step manual test script for the user to execute.
+
+#### Manual Test Script Template
+
+```markdown
+# Manual Reproduction Script for HYP_1
+
+**DO NOT COMMIT** - This is a temporary debug reproduction script
+
+## Prerequisites
+
+- Application running in development mode
+- Database seeded with test data
+- Browser DevTools open (Console + Network tabs)
+
+## Reproduction Steps
+
+Follow these steps exactly and observe the console/terminal output:
+
+### Step 1: Start the application
+```bash
+npm run dev
+```
+
+**Expected Output:**
+- Server starts on http://localhost:3000
+- Console shows "Server listening on port 3000"
+
+### Step 2: Open the application in browser
+
+1. Navigate to: http://localhost:3000/users/new
+2. Open Browser DevTools (F12)
+3. Go to Console tab
+4. Go to Network tab
+
+### Step 3: Trigger the issue
+
+1. Fill in the form:
+   - **Name field**: Enter "Test User"
+   - **Email field**: Leave empty or enter null
+2. Click "Submit" button
+3. **IMPORTANT**: Watch the following:
+   - Browser console for errors
+   - Network tab for HTTP request/response
+   - Terminal/console where server is running
+
+### Step 4: Capture logs
+
+Copy the following outputs:
+
+**From Browser Console:**
+```
+(Paste any error messages or console.log output here)
+```
+
+**From Browser Network Tab:**
+- Request URL: _______________
+- Request Method: _______________
+- Status Code: _______________
+- Response Body:
+```
+(Paste response body here)
+```
+
+**From Server Terminal:**
+```
+(Paste all server log output after clicking Submit)
+```
+
+### Step 5: Provide the captured logs
+
+Reply with the captured logs from Step 4. The logs should contain markers like:
+- `[DEBUG_HYP_1_START]` - Entry point for hypothesis 1
+- `[DEBUG_HYP_1] ...` - Variable values and execution paths
+- `[DEBUG_HYP_1_END]` - Exit point for hypothesis 1
+
+## What to Look For
+
+The instrumentation added the following debug logs. You should see these markers in the output:
+
+1. **In UserController.create** (src/controllers/user.ts:45):
+   - `[DEBUG_HYP_1_START] UserController.create ENTER`
+   - `[DEBUG_HYP_1] req.body = {...}`
+   - `[DEBUG_HYP_1] email value = null`
+
+2. **In validation logic** (src/validators/user.ts:12):
+   - `[DEBUG_HYP_1] Validation result = {...}`
+
+If you don't see these markers, the code path may not have executed. Please try the reproduction steps again.
+
+---
+
+## Troubleshooting
+
+**If the issue doesn't reproduce:**
+- Verify all prerequisites are met
+- Try clearing browser cache and restarting server
+- Check that you're following the exact steps (order matters)
+
+**If no debug logs appear:**
+- Check that the instrumentation commit was applied (git log)
+- Verify the application restarted after instrumentation
+- Ensure logging framework is configured correctly
+
+---
+
+**After capturing logs, the debug skill will proceed to Log Analysis phase.**
+```
+
+#### Manual Script Generation Rules
+
+1. **Markdown format**: Easy to read and copy
+2. **Prerequisites section**: List all environment setup needed
+3. **Numbered steps**: Clear, sequential instructions
+4. **Expected output**: Tell user what they should see at each step
+5. **Capture instructions**: Explicit guidance on what logs to copy
+6. **Marker explanation**: Show user what debug markers to look for
+7. **Troubleshooting**: Common issues and how to resolve them
+8. **DO NOT COMMIT**: Remind user this is temporary
+9. **Next phase**: Tell user what happens after they provide logs
+
+---
+
+### Step 4: Execute Reproduction
+
+Execute the automated test or prompt the user to run the manual script.
+
+#### For Automated Reproduction
+
+**Run the generated test:**
+
+```bash
+# JavaScript/TypeScript
+npm test -- test/debug/reproduction-HYP_1.test.ts
+
+# Python
+pytest test/debug/test_reproduction_hyp_1.py -v -s
+
+# Go
+go test -v ./test/debug/reproduction_hyp_1_test.go
+
+# Java
+mvn test -Dtest=ReproductionHyp1Test
+
+# Ruby
+rspec spec/debug/reproduction_hyp_1_spec.rb
+```
+
+**Capture output:**
+
+1. Redirect stdout and stderr to a log file:
+   ```bash
+   npm test -- test/debug/reproduction-HYP_1.test.ts 2>&1 | tee logs/reproduction-hyp-1.log
+   ```
+
+2. Parse the log file for debug markers:
+   ```bash
+   grep -E '\[DEBUG_(HYP_[0-9]+|REPRO)\]' logs/reproduction-hyp-1.log
+   ```
+
+3. Store full logs in session:
+   ```json
+   {
+     "reproductionRun": {
+       "timestamp": "2026-01-31T10:30:00Z",
+       "hypothesisId": "HYP_1",
+       "method": "automated",
+       "testFile": "test/debug/reproduction-HYP_1.test.ts",
+       "testCommand": "npm test -- test/debug/reproduction-HYP_1.test.ts",
+       "exitCode": 1,
+       "duration": 2.5,
+       "fullLog": "... (complete log output) ...",
+       "debugMarkers": [
+         "[DEBUG_HYP_1_START] UserController.create ENTER",
+         "[DEBUG_HYP_1] req.body = {name: 'Test User', email: null}",
+         "[DEBUG_HYP_1] email value = null",
+         "[DEBUG_HYP_1] TypeError: Cannot read property 'toLowerCase' of null at line 47"
+       ],
+       "reproduced": true
+     }
+   }
+   ```
+
+#### For Manual Reproduction
+
+1. **Display the manual script** to the user
+2. **Prompt for logs**:
+   > Please follow the manual reproduction script above and provide the captured logs.
+   >
+   > When ready, paste the logs here (you can use multiple messages if needed).
+3. **Wait for user input** (user provides logs via chat)
+4. **Parse user-provided logs** for debug markers
+5. **Store logs in session** with same schema as automated
+
+---
+
+### Step 5: Verify Reproduction Success
+
+Check whether the issue was successfully reproduced by analyzing the captured logs.
+
+#### Reproduction Success Criteria
+
+The reproduction is successful if:
+
+1. **Debug markers present**: At least one `[DEBUG_HYP_N_*]` marker appears in logs
+2. **Code path executed**: Markers from instrumented files are present
+3. **Issue behavior observed**: Error messages or incorrect behavior matches session description
+4. **Logs are parseable**: Log format is consistent and can be extracted
+
+#### Reproduction Verification Prompt
+
+```
+Analyzing reproduction logs for Hypothesis HYP_1...
+
+✓ Debug markers found: 12 markers detected
+✓ Code path executed: UserController.create, validateEmail, emailToLowerCase
+✓ Issue observed: TypeError: Cannot read property 'toLowerCase' of null
+✓ Logs parseable: All markers extracted successfully
+
+**Reproduction Status: SUCCESS**
+
+Proceeding to Log Analysis phase to confirm hypothesis...
+```
+
+**If reproduction fails:**
+
+```
+Analyzing reproduction logs for Hypothesis HYP_1...
+
+✗ Debug markers found: 0 markers detected
+✗ Code path executed: No instrumented code paths executed
+? Issue observed: Cannot determine (no logs)
+
+**Reproduction Status: FAILED**
+
+**Possible reasons:**
+1. Test did not trigger the instrumented code path
+2. Logging framework not configured correctly
+3. Instrumentation markers not present in code (check instrumentation commit)
+4. Test environment differs from issue environment
+
+**Next steps:**
+1. Verify instrumentation commit was applied: git log --oneline -5
+2. Check that instrumented files contain markers: grep -r "DEBUG_HYP_1" src/
+3. Verify test setup matches reproduction steps from session
+4. Consider manual reproduction if automated approach doesn't match environment
+```
+
+---
+
+### Step 6: Store Logs for Analysis
+
+Update the session with reproduction results.
+
+#### Session Update Schema
+
+```json
+{
+  "reproductionRuns": [
+    {
+      "runId": "run_1738320600_abc123",
+      "timestamp": "2026-01-31T10:30:00Z",
+      "hypothesisId": "HYP_1",
+      "method": "automated",
+      "testFile": "test/debug/reproduction-HYP_1.test.ts",
+      "testCommand": "npm test -- test/debug/reproduction-HYP_1.test.ts",
+      "exitCode": 1,
+      "duration": 2.5,
+      "fullLog": "... (complete stdout/stderr) ...",
+      "debugMarkers": [
+        {
+          "marker": "[DEBUG_HYP_1_START] UserController.create ENTER",
+          "lineNumber": 45,
+          "file": "src/controllers/user.ts",
+          "timestamp": "2026-01-31T10:30:01.234Z"
+        },
+        {
+          "marker": "[DEBUG_HYP_1] req.body",
+          "value": "{name: 'Test User', email: null}",
+          "lineNumber": 46,
+          "file": "src/controllers/user.ts"
+        }
+      ],
+      "reproduced": true,
+      "issueObserved": "TypeError: Cannot read property 'toLowerCase' of null",
+      "notes": "Issue reproduced successfully on first attempt"
+    }
+  ],
+  "status": "reproduction_run"
+}
+```
+
+**Fields:**
+- `runId` (string): Unique identifier for this reproduction run
+- `timestamp` (string): When reproduction was executed
+- `hypothesisId` (string): Which hypothesis this reproduction tests
+- `method` (string): `automated` or `manual`
+- `testFile` (string): Path to generated test file (if automated)
+- `testCommand` (string): Command used to run test
+- `exitCode` (number): Test exit code (0 = pass, non-zero = fail)
+- `duration` (number): Seconds taken to run test
+- `fullLog` (string): Complete stdout/stderr output
+- `debugMarkers` (array): Parsed debug markers with context
+- `reproduced` (boolean): Whether issue was successfully reproduced
+- `issueObserved` (string): Brief description of observed issue
+- `notes` (string): Additional context or observations
+
+---
+
+### Step 7: Reproduction Rules
+
+1. **Always prefer automated reproduction** when feasible - it's faster and more reliable
+2. **Generate minimal test cases** - only include code needed to trigger the issue
+3. **Use test framework conventions** - follow project's existing test patterns
+4. **Capture complete logs** - don't truncate, log analysis needs full output
+5. **Store reproduction artifacts** - test files and logs for potential re-runs
+6. **Mark as temporary** - ensure generated tests are not accidentally committed
+7. **Validate before analysis** - check that markers are present before proceeding
+8. **Support re-runs** - structure allows multiple reproduction attempts for flaky issues
+9. **Provide clear feedback** - tell user if reproduction succeeds or fails and why
+10. **Timeout protection** - abort reproduction if it takes > 5 minutes (configurable)
+
+---
+
+### Proceeding to Next Phase
+
+After reproduction is complete and logs are captured:
+
+1. **Session updated** with `reproductionRuns` array and status `reproduction_run`
+2. **Logs stored** in session for analysis phase
+3. **Debug markers extracted** and structured for parsing
+4. **Test artifacts saved** for potential re-runs (if flaky issue)
+
+**Proceed to:**
+- **Flaky Test Handling Phase** if `isFlaky: true` in session (multiple runs needed)
+- **Log Analysis Phase** if `isFlaky: false` (single reproduction sufficient)
+- Use captured logs to confirm or reject current hypothesis
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
