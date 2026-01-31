@@ -8820,3 +8820,940 @@ The skill fails gracefully when:
 - Environment/setup issues prevent reproduction
 - At which point comprehensive context is preserved for manual debugging
 
+---
+
+## Instrumentation Cleanup Phase Template
+
+When fix verification succeeds, use this template to remove all debug instrumentation added during investigation.
+
+---
+
+### Step 1: Identify All Instrumented Files
+
+**When**: Fix verification status is `fix_verified`
+
+**Action**: Locate all files that contain debug instrumentation markers
+
+**Marker Search Template:**
+
+```bash
+#!/bin/bash
+# Instrumentation Marker Search
+# Session: ${session.sessionId}
+
+echo "=== Searching for DEBUG markers across all instrumented files ==="
+
+# Search for all files with DEBUG markers
+INSTRUMENTED_FILES=$(grep -rl "DEBUG_HYP_" . \
+    --exclude-dir=node_modules \
+    --exclude-dir=.git \
+    --exclude-dir=build \
+    --exclude-dir=dist \
+    --exclude-dir=logs \
+    --exclude="*.log" \
+    --exclude="*.md")
+
+echo "Files with instrumentation:"
+echo "$INSTRUMENTED_FILES" | while read -r file; do
+    if [ -n "$file" ]; then
+        MARKER_COUNT=$(grep -c "DEBUG_HYP_" "$file" || echo 0)
+        START_COUNT=$(grep -c "DEBUG_HYP_.*_START" "$file" || echo 0)
+        END_COUNT=$(grep -c "DEBUG_HYP_.*_END" "$file" || echo 0)
+
+        echo "  $file: $MARKER_COUNT markers (START: $START_COUNT, END: $END_COUNT)"
+
+        if [ "$START_COUNT" -ne "$END_COUNT" ]; then
+            echo "    ⚠️  WARNING: Unbalanced START/END markers"
+        fi
+    fi
+done
+
+# Store results for cleanup phase
+echo "$INSTRUMENTED_FILES" > /tmp/debug-cleanup-files.txt
+```
+
+**Instrumentation Inventory Structure:**
+
+```json
+{
+  "instrumentationInventory": {
+    "timestamp": "${new Date().toISOString()}",
+    "sessionId": "${session.sessionId}",
+    "files": [
+      {
+        "path": "src/controllers/user.ts",
+        "markerCount": 8,
+        "startMarkers": 4,
+        "endMarkers": 4,
+        "balanced": true,
+        "hypothesisIds": ["HYP_1"]
+      },
+      {
+        "path": "src/services/database.py",
+        "markerCount": 12,
+        "startMarkers": 6,
+        "endMarkers": 6,
+        "balanced": true,
+        "hypothesisIds": ["HYP_1", "HYP_2"]
+      }
+    ],
+    "totalFiles": 2,
+    "totalMarkers": 20,
+    "allBalanced": true
+  }
+}
+```
+
+**Validation Checklist:**
+
+| Check | Expected | Status |
+|-------|----------|--------|
+| All instrumented files from session found | Files match `session.instrumentation.files` | ☐ |
+| START/END markers balanced per file | `startMarkers === endMarkers` | ☐ |
+| No orphaned markers in unexpected files | Only session files have markers | ☐ |
+| Marker format correct | All match `DEBUG_HYP_*` pattern | ☐ |
+
+---
+
+### Step 2: Extract Marker Boundaries
+
+**When**: Instrumented files identified
+
+**Action**: For each file, identify exact line ranges for removal
+
+**Boundary Extraction Template:**
+
+```bash
+#!/bin/bash
+# Extract Marker Boundaries for Cleanup
+# File: $FILE_PATH
+
+echo "=== Extracting marker boundaries from $FILE_PATH ==="
+
+# Find all START markers with line numbers
+grep -n "DEBUG_HYP_.*_START" "$FILE_PATH" | while read -r start_line; do
+    LINE_NUM=$(echo "$start_line" | cut -d: -f1)
+    MARKER=$(echo "$start_line" | cut -d: -f2- | grep -oP "DEBUG_HYP_\d+")
+
+    # Find corresponding END marker
+    END_LINE=$(awk -v start="$LINE_NUM" -v marker="$MARKER" '
+        NR > start && /_END/ && $0 ~ marker { print NR; exit }
+    ' "$FILE_PATH")
+
+    if [ -n "$END_LINE" ]; then
+        echo "  Found: $MARKER (lines $LINE_NUM-$END_LINE)"
+        echo "$FILE_PATH:$LINE_NUM:$END_LINE:$MARKER" >> /tmp/debug-cleanup-boundaries.txt
+    else
+        echo "  ⚠️  WARNING: $MARKER at line $LINE_NUM has no END marker"
+    fi
+done
+```
+
+**Boundary Structure:**
+
+```json
+{
+  "markerBoundaries": [
+    {
+      "file": "src/controllers/user.ts",
+      "hypothesisId": "HYP_1",
+      "regions": [
+        {
+          "startLine": 45,
+          "endLine": 52,
+          "startMarkerText": "// DEBUG_HYP_1_START",
+          "endMarkerText": "// DEBUG_HYP_1_END",
+          "linesAffected": 8,
+          "codePreview": "console.log('HYP_1: user object:', user);"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Boundary Detection Rules:**
+
+1. **Paired markers**: Every START must have matching END
+2. **Nested markers**: Handle nested hypothesis markers (HYP_1 inside HYP_2 blocks)
+3. **Line precision**: Capture exact line numbers including marker comment lines
+4. **Content preservation**: Identify original code vs instrumentation code within boundaries
+5. **Multi-file tracking**: Track boundaries across all instrumented files
+
+---
+
+### Step 3: Generate Cleanup Plan
+
+**When**: All marker boundaries extracted
+
+**Action**: Create detailed removal plan preserving original code structure
+
+**Cleanup Plan Generation Prompt:**
+
+```
+Generate cleanup plan for session ${session.sessionId}:
+
+FOR EACH instrumented file:
+  1. Load file content
+  2. Identify all DEBUG marker regions (START to END)
+  3. Determine what to remove:
+     - Marker comment lines (// DEBUG_HYP_N_START/END)
+     - Logging statements added for debugging
+     - Temporary variable declarations used only for logging
+  4. Determine what to PRESERVE:
+     - Original code structure
+     - Indentation and whitespace
+     - Comments that existed before debugging
+     - All code outside marker boundaries
+  5. Generate line-by-line removal instructions
+
+VALIDATION:
+  - Ensure no original code is removed
+  - Preserve all imports/exports not added for instrumentation
+  - Maintain code formatting and style
+  - Verify syntax remains valid after removal
+```
+
+**Cleanup Plan Structure:**
+
+```json
+{
+  "cleanupPlan": {
+    "sessionId": "${session.sessionId}",
+    "timestamp": "${new Date().toISOString()}",
+    "files": [
+      {
+        "path": "src/controllers/user.ts",
+        "language": "typescript",
+        "operations": [
+          {
+            "type": "remove_lines",
+            "startLine": 45,
+            "endLine": 52,
+            "reason": "DEBUG_HYP_1 instrumentation block",
+            "affectedCode": [
+              "// DEBUG_HYP_1_START",
+              "console.log('HYP_1: Entering user.create with data:', data);",
+              "console.log('HYP_1: User object after validation:', user);",
+              "console.log('HYP_1: user.id value:', user?.id);",
+              "// DEBUG_HYP_1_END"
+            ]
+          }
+        ],
+        "importsToRemove": [],
+        "variablesToRemove": [],
+        "expectedLineCountReduction": 5,
+        "syntaxValidationRequired": true
+      }
+    ],
+    "totalOperations": 3,
+    "estimatedLinesRemoved": 15
+  }
+}
+```
+
+**Cleanup Plan Rules:**
+
+1. **Conservative removal**: Only remove lines explicitly added for debugging
+2. **Line-by-line precision**: Use exact line numbers from marker extraction
+3. **Import cleanup**: Remove imports only if added solely for debugging (e.g., `import { performance } from 'perf_hooks'`)
+4. **Variable cleanup**: Remove variables declared only for logging purposes
+5. **Comment preservation**: Keep original comments, remove only DEBUG markers
+6. **Formatting preservation**: Maintain original indentation, whitespace, and style
+7. **Syntax verification**: Verify resulting code is syntactically valid
+8. **Atomic operations**: Group removals by file for atomic commits
+
+---
+
+### Step 4: Remove Instrumentation Code
+
+**When**: Cleanup plan generated and validated
+
+**Action**: Execute removal operations for each file
+
+**Removal Execution Template:**
+
+```bash
+#!/bin/bash
+# Execute Instrumentation Cleanup
+# Session: ${session.sessionId}
+
+echo "=== Executing Instrumentation Cleanup ==="
+
+# Process each file in cleanup plan
+while IFS= read -r file_path; do
+    echo "Cleaning: $file_path"
+
+    # Create backup
+    cp "$file_path" "${file_path}.pre-cleanup"
+
+    # Remove marker blocks (reverse order to maintain line numbers)
+    # Extract boundaries for this file
+    grep "^${file_path}:" /tmp/debug-cleanup-boundaries.txt | \
+        sort -t: -k2 -rn | \
+        while IFS=: read -r path start end marker; do
+            echo "  Removing lines $start-$end ($marker)"
+
+            # Use sed to delete line range (inclusive)
+            sed -i.bak "${start},${end}d" "$file_path"
+        done
+
+    # Verify syntax after cleanup
+    case "$file_path" in
+        *.ts|*.tsx)
+            npx tsc --noEmit "$file_path" 2>&1 | grep -q "error" && {
+                echo "  ❌ Syntax error after cleanup, restoring backup"
+                mv "${file_path}.pre-cleanup" "$file_path"
+                exit 1
+            }
+            ;;
+        *.py)
+            python3 -m py_compile "$file_path" 2>&1 | grep -q "SyntaxError" && {
+                echo "  ❌ Syntax error after cleanup, restoring backup"
+                mv "${file_path}.pre-cleanup" "$file_path"
+                exit 1
+            }
+            ;;
+        *.go)
+            go fmt "$file_path" > /dev/null 2>&1 || {
+                echo "  ❌ Syntax error after cleanup, restoring backup"
+                mv "${file_path}.pre-cleanup" "$file_path"
+                exit 1
+            }
+            ;;
+    esac
+
+    echo "  ✅ Cleaned successfully"
+
+done < /tmp/debug-cleanup-files.txt
+
+echo "=== Cleanup Complete ==="
+```
+
+**Alternative: Programmatic Removal (TypeScript Example):**
+
+```typescript
+// Programmatic Cleanup Implementation
+import * as fs from 'fs';
+
+function removeInstrumentation(
+  filePath: string,
+  boundaries: Array<{ startLine: number; endLine: number }>
+): void {
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+
+  // Sort boundaries in reverse order to maintain line numbers
+  const sortedBoundaries = boundaries.sort((a, b) => b.startLine - a.startLine);
+
+  // Remove each boundary (inclusive)
+  for (const { startLine, endLine } of sortedBoundaries) {
+    // Line numbers are 1-indexed, array is 0-indexed
+    lines.splice(startLine - 1, endLine - startLine + 1);
+  }
+
+  // Write cleaned content
+  fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+}
+```
+
+**Removal Verification Checklist:**
+
+| Check | Expected | Status |
+|-------|----------|--------|
+| All DEBUG markers removed | `grep -r "DEBUG_HYP_" returns no results | ☐ |
+| Original code preserved | No functional code removed | ☐ |
+| Syntax valid | Code compiles/parses without errors | ☐ |
+| Formatting preserved | Indentation and style unchanged | ☐ |
+| No orphaned variables | No unused imports or declarations | ☐ |
+
+---
+
+### Step 5: Clean Up Orphaned Imports and Variables
+
+**When**: Instrumentation code removed
+
+**Action**: Remove imports and variables that were added only for debugging
+
+**Orphaned Code Detection:**
+
+```bash
+#!/bin/bash
+# Detect Orphaned Imports and Variables
+
+echo "=== Detecting Orphaned Code ==="
+
+for file in $(cat /tmp/debug-cleanup-files.txt); do
+    echo "Checking: $file"
+
+    # Language-specific orphan detection
+    case "$file" in
+        *.ts|*.tsx|*.js|*.jsx)
+            # Check for unused imports
+            npx ts-prune "$file" 2>&1 | grep "unused" || echo "  No orphaned imports"
+            ;;
+        *.py)
+            # Check for unused imports with autoflake
+            autoflake --check --remove-all-unused-imports "$file" || echo "  Orphaned imports detected"
+            ;;
+        *.go)
+            # Go compiler handles this automatically
+            go build "$file" 2>&1 | grep "imported and not used" || echo "  No orphaned imports"
+            ;;
+    esac
+done
+```
+
+**Common Orphaned Patterns:**
+
+| Language | Pattern | Removal Command |
+|----------|---------|-----------------|
+| TypeScript | `import { performance } from 'perf_hooks'` | Remove if no other usage |
+| Python | `import time`, `import logging` (if not used elsewhere) | Use `autoflake --remove-all-unused-imports` |
+| Go | `import "time"` | `goimports -w <file>` |
+| Java | `import java.time.Instant` | IDE or `organize imports` |
+
+**Orphan Removal Template:**
+
+```json
+{
+  "orphanedCode": {
+    "file": "src/controllers/user.ts",
+    "orphanedImports": [
+      {
+        "line": 3,
+        "code": "import { performance } from 'perf_hooks';",
+        "reason": "Used only for DEBUG timing measurements",
+        "safeToRemove": true
+      }
+    ],
+    "orphanedVariables": [
+      {
+        "line": 48,
+        "code": "const debugStartTime = performance.now();",
+        "reason": "Temporary variable for timing instrumentation",
+        "safeToRemove": true
+      }
+    ]
+  }
+}
+```
+
+---
+
+### Step 6: Run Linter and Formatter
+
+**When**: All instrumentation and orphaned code removed
+
+**Action**: Run project's configured linter and formatter to restore code consistency
+
+**Linter/Formatter Detection:**
+
+```bash
+#!/bin/bash
+# Detect and Run Project Linter/Formatter
+
+echo "=== Running Linter/Formatter ==="
+
+# Detect project configuration
+if [ -f "package.json" ]; then
+    # JavaScript/TypeScript projects
+    if jq -e '.scripts.lint' package.json > /dev/null; then
+        echo "Running npm run lint..."
+        npm run lint -- --fix
+    elif jq -e '.scripts.format' package.json > /dev/null; then
+        echo "Running npm run format..."
+        npm run format
+    elif [ -f ".eslintrc.json" ] || [ -f ".eslintrc.js" ]; then
+        echo "Running eslint..."
+        npx eslint --fix $(cat /tmp/debug-cleanup-files.txt)
+    elif [ -f ".prettierrc" ]; then
+        echo "Running prettier..."
+        npx prettier --write $(cat /tmp/debug-cleanup-files.txt)
+    fi
+elif [ -f "pyproject.toml" ] || [ -f "setup.cfg" ]; then
+    # Python projects
+    if command -v ruff &> /dev/null; then
+        echo "Running ruff format..."
+        ruff format $(cat /tmp/debug-cleanup-files.txt)
+        ruff check --fix $(cat /tmp/debug-cleanup-files.txt)
+    elif command -v black &> /dev/null; then
+        echo "Running black..."
+        black $(cat /tmp/debug-cleanup-files.txt)
+    fi
+elif [ -f "go.mod" ]; then
+    # Go projects
+    echo "Running go fmt..."
+    go fmt $(cat /tmp/debug-cleanup-files.txt)
+    echo "Running goimports..."
+    goimports -w $(cat /tmp/debug-cleanup-files.txt)
+fi
+
+echo "=== Formatting Complete ==="
+```
+
+**Formatter Configuration Detection:**
+
+| Language | Config Files | Formatter | Command |
+|----------|--------------|-----------|---------|
+| TypeScript/JS | `.eslintrc.*`, `.prettierrc` | ESLint, Prettier | `eslint --fix`, `prettier --write` |
+| Python | `pyproject.toml`, `setup.cfg` | Black, Ruff | `black .`, `ruff format` |
+| Go | N/A (built-in) | gofmt, goimports | `go fmt`, `goimports -w` |
+| Java | `.editorconfig`, checkstyle | google-java-format | `google-java-format -i` |
+| Ruby | `.rubocop.yml` | RuboCop | `rubocop -a` |
+
+**Linter Rules:**
+
+1. **Run only if configured**: Don't introduce new linter config if project doesn't have one
+2. **Fix mode**: Use auto-fix flags (`--fix`, `-a`, etc.) to correct issues automatically
+3. **Scoped to cleaned files**: Only format files that were instrumented
+4. **Fail gracefully**: If linter not available, skip with warning
+5. **Respect .gitignore**: Don't format generated or ignored files
+
+---
+
+### Step 7: Verify Cleanup Integrity
+
+**When**: Formatting complete
+
+**Action**: Verify all instrumentation removed and code is functional
+
+**Cleanup Verification Template:**
+
+```bash
+#!/bin/bash
+# Cleanup Integrity Verification
+# Session: ${session.sessionId}
+
+echo "=== Cleanup Integrity Verification ==="
+
+# Check 1: No DEBUG markers remain
+echo "1. Checking for remaining DEBUG markers..."
+REMAINING_MARKERS=$(grep -r "DEBUG_HYP_" . \
+    --exclude-dir=node_modules \
+    --exclude-dir=.git \
+    --exclude-dir=logs \
+    --exclude="*.log" \
+    --exclude="*.md" || echo "")
+
+if [ -z "$REMAINING_MARKERS" ]; then
+    echo "   ✅ No DEBUG markers found"
+else
+    echo "   ❌ FAIL: DEBUG markers still present:"
+    echo "$REMAINING_MARKERS"
+    exit 1
+fi
+
+# Check 2: No orphaned imports
+echo "2. Checking for orphaned imports..."
+case "$(basename $(pwd))" in
+    *typescript*|*javascript*)
+        npx ts-prune 2>&1 | grep -q "unused" && {
+            echo "   ⚠️  Warning: Orphaned imports detected (may need manual cleanup)"
+        } || echo "   ✅ No orphaned imports"
+        ;;
+    *python*)
+        autoflake --check --remove-all-unused-imports $(cat /tmp/debug-cleanup-files.txt) && {
+            echo "   ✅ No orphaned imports"
+        } || echo "   ⚠️  Warning: Orphaned imports detected"
+        ;;
+esac
+
+# Check 3: Code compiles/runs
+echo "3. Verifying code integrity..."
+${session.buildCommand || 'echo "No build command - skipping"'}
+BUILD_EXIT=$?
+
+if [ $BUILD_EXIT -eq 0 ]; then
+    echo "   ✅ Code compiles successfully"
+else
+    echo "   ❌ FAIL: Code does not compile after cleanup"
+    exit 1
+fi
+
+# Check 4: Tests still pass (use original reproduction)
+echo "4. Re-running original reproduction test..."
+${session.reproductionRuns[0].testCommand}
+TEST_EXIT=$?
+
+if [ $TEST_EXIT -eq 0 ]; then
+    echo "   ✅ Reproduction test still passes"
+else
+    echo "   ❌ FAIL: Reproduction test fails after cleanup"
+    exit 1
+fi
+
+echo "=== Verification Complete: All checks passed ==="
+```
+
+**Verification Checklist:**
+
+| Check | Description | Expected | Status |
+|-------|-------------|----------|--------|
+| No DEBUG markers | `grep -r "DEBUG_HYP_"` returns nothing | Zero matches | ☐ |
+| No orphaned imports | Unused imports removed | Clean import list | ☐ |
+| No orphaned variables | Temp variables removed | No unused declarations | ☐ |
+| Code compiles | Build succeeds | Exit code 0 | ☐ |
+| Tests pass | Original reproduction test passes | Exit code 0 | ☐ |
+| Formatting clean | Linter passes | No warnings | ☐ |
+| Original code preserved | Functional behavior unchanged | Same as pre-debug | ☐ |
+
+**Cleanup Integrity Structure:**
+
+```json
+{
+  "cleanupIntegrity": {
+    "timestamp": "${new Date().toISOString()}",
+    "markersRemoved": 20,
+    "markersRemaining": 0,
+    "orphanedImportsRemoved": 2,
+    "orphanedVariablesRemoved": 3,
+    "codeCompiles": true,
+    "buildExitCode": 0,
+    "testsPass": true,
+    "testExitCode": 0,
+    "linterPassed": true,
+    "filesModified": ["src/controllers/user.ts", "src/services/database.py"],
+    "integrityPassed": true
+  }
+}
+```
+
+---
+
+### Step 8: Commit Cleanup Changes
+
+**When**: Cleanup verification passes
+
+**Action**: Commit all cleanup changes separately from fix commit
+
+**Cleanup Commit Template:**
+
+```bash
+#!/bin/bash
+# Commit Cleanup Changes
+# Session: ${session.sessionId}
+
+# Stage all cleaned files
+git add $(cat /tmp/debug-cleanup-files.txt)
+
+# Generate commit message
+git commit -m "chore: Remove debug instrumentation
+
+Cleanup after successful fix verification.
+Session: ${session.sessionId}
+
+Files cleaned:
+$(cat /tmp/debug-cleanup-files.txt | sed 's/^/- /')
+
+Instrumentation removed:
+- ${cleanupIntegrity.markersRemoved} DEBUG markers
+- ${cleanupIntegrity.orphanedImportsRemoved} orphaned imports
+- ${cleanupIntegrity.orphanedVariablesRemoved} temporary variables
+
+Original fix preserved in commit: ${session.verifiedFix.commitSha}
+All tests passing: ${cleanupIntegrity.testsPass}"
+```
+
+**Commit Message Structure:**
+
+```
+chore: Remove debug instrumentation
+
+Cleanup after successful fix verification.
+Session: sess_1706789400000_abc123
+
+Files cleaned:
+- src/controllers/user.ts
+- src/services/database.py
+
+Instrumentation removed:
+- 20 DEBUG markers
+- 2 orphaned imports (performance, time)
+- 3 temporary variables
+
+Original fix preserved in commit: abc123def456
+All tests passing: true
+```
+
+**Commit Rules:**
+
+1. **Separate commit**: Cleanup MUST be separate commit from fix (for clarity and potential revert)
+2. **Descriptive message**: List exactly what was removed
+3. **Reference fix commit**: Include SHA of verified fix
+4. **Include session ID**: For traceability back to debug session
+5. **Verify before commit**: All integrity checks must pass
+6. **No-amend**: Do NOT amend fix commit, always create new cleanup commit
+
+---
+
+### Step 9: Update Session and Transition Status
+
+**When**: Cleanup committed successfully
+
+**Action**: Update session with cleanup details and transition to success summary
+
+**Session Update for Cleanup:**
+
+```json
+{
+  "status": "cleanup_complete",
+  "cleanup": {
+    "timestamp": "${new Date().toISOString()}",
+    "commitSha": "${cleanupCommitSha}",
+    "commitMessage": "chore: Remove debug instrumentation",
+    "filesModified": ["src/controllers/user.ts", "src/services/database.py"],
+    "markersRemoved": 20,
+    "orphanedImportsRemoved": 2,
+    "orphanedVariablesRemoved": 3,
+    "integrityVerification": {
+      "markersRemaining": 0,
+      "codeCompiles": true,
+      "testsPass": true,
+      "linterPassed": true
+    }
+  },
+  "commits": [
+    ...session.commits,
+    {
+      "type": "cleanup",
+      "sha": "${cleanupCommitSha}",
+      "timestamp": "${new Date().toISOString()}",
+      "message": "chore: Remove debug instrumentation"
+    }
+  ]
+}
+```
+
+**Cleanup Summary Template:**
+
+```
+Instrumentation Cleanup COMPLETE:
+
+✅ All DEBUG markers removed: ${cleanup.markersRemoved} markers
+✅ Orphaned code cleaned: ${cleanup.orphanedImportsRemoved} imports, ${cleanup.orphanedVariablesRemoved} variables
+✅ Code integrity verified: Compiles ✓, Tests pass ✓, Linter clean ✓
+✅ Changes committed: ${cleanup.commitSha}
+
+Files cleaned:
+${cleanup.filesModified.map(f => '  - ' + f).join('\n')}
+
+Session state:
+- Original issue: RESOLVED ✓
+- Fix applied: ${session.verifiedFix.commitSha}
+- Cleanup complete: ${cleanup.commitSha}
+- Session status: cleanup_complete
+
+Proceeding to Success Summary Generation...
+```
+
+---
+
+### Instrumentation Cleanup Examples
+
+#### Example 1: TypeScript Single-File Cleanup
+
+**Context:**
+```json
+{
+  "instrumentationInventory": {
+    "files": [
+      {
+        "path": "src/controllers/user.ts",
+        "markerCount": 6,
+        "startMarkers": 3,
+        "endMarkers": 3,
+        "hypothesisIds": ["HYP_1"]
+      }
+    ]
+  }
+}
+```
+
+**Before Cleanup:**
+```typescript
+// src/controllers/user.ts
+import { Request, Response } from 'express';
+import { performance } from 'perf_hooks'; // Added for debugging
+
+export async function createUser(req: Request, res: Response) {
+    // DEBUG_HYP_1_START
+    console.log('HYP_1: [ENTER] createUser with body:', req.body);
+    const debugStartTime = performance.now();
+    // DEBUG_HYP_1_END
+
+    const { name, email } = req.body;
+
+    // DEBUG_HYP_1_START
+    console.log('HYP_1: [VALUE] name:', name, 'email:', email);
+    // DEBUG_HYP_1_END
+
+    if (!email) {
+        return res.status(400).json({ error: 'Email required' });
+    }
+
+    const user = await User.create({ name, email });
+
+    // DEBUG_HYP_1_START
+    console.log('HYP_1: [VALUE] Created user:', user);
+    console.log('HYP_1: [TIMING] createUser took:', performance.now() - debugStartTime, 'ms');
+    console.log('HYP_1: [EXIT] createUser');
+    // DEBUG_HYP_1_END
+
+    return res.status(201).json(user);
+}
+```
+
+**After Cleanup:**
+```typescript
+// src/controllers/user.ts
+import { Request, Response } from 'express';
+
+export async function createUser(req: Request, res: Response) {
+    const { name, email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ error: 'Email required' });
+    }
+
+    const user = await User.create({ name, email });
+
+    return res.status(201).json(user);
+}
+```
+
+**Cleanup Summary:**
+- Removed: 3 marker blocks (6 marker lines + 6 logging statements = 12 lines total)
+- Removed: 1 orphaned import (`performance`)
+- Removed: 1 orphaned variable (`debugStartTime`)
+- Result: Clean, production-ready code with original functionality preserved
+
+---
+
+#### Example 2: Python Multi-File Cleanup
+
+**Context:**
+```json
+{
+  "instrumentationInventory": {
+    "files": [
+      {
+        "path": "src/services/cache.py",
+        "markerCount": 8,
+        "startMarkers": 4,
+        "endMarkers": 4,
+        "hypothesisIds": ["HYP_2"]
+      },
+      {
+        "path": "src/models/user.py",
+        "markerCount": 4,
+        "startMarkers": 2,
+        "endMarkers": 2,
+        "hypothesisIds": ["HYP_2"]
+      }
+    ]
+  }
+}
+```
+
+**Before Cleanup (cache.py):**
+```python
+# src/services/cache.py
+import redis
+import logging
+import time  # Added for debugging
+
+logger = logging.getLogger(__name__)
+
+def get_user_from_cache(user_id: str):
+    # DEBUG_HYP_2_START
+    trace_id = f"{user_id}_{time.time()}"
+    logging.info(f"HYP_2: [HYP_2_TRACE:{trace_id}] [ENTER] get_user_from_cache user_id={user_id}")
+    # DEBUG_HYP_2_END
+
+    cache_key = f"user:{user_id}"
+
+    # DEBUG_HYP_2_START
+    logging.info(f"HYP_2: [HYP_2_TRACE:{trace_id}] [VALUE] cache_key={cache_key}")
+    # DEBUG_HYP_2_END
+
+    result = redis_client.get(cache_key)
+
+    # DEBUG_HYP_2_START
+    logging.info(f"HYP_2: [HYP_2_TRACE:{trace_id}] [VALUE] result={result}")
+    logging.info(f"HYP_2: [HYP_2_TRACE:{trace_id}] [EXIT] get_user_from_cache")
+    # DEBUG_HYP_2_END
+
+    return result
+```
+
+**After Cleanup (cache.py):**
+```python
+# src/services/cache.py
+import redis
+import logging
+
+logger = logging.getLogger(__name__)
+
+def get_user_from_cache(user_id: str):
+    cache_key = f"user:{user_id}"
+    result = redis_client.get(cache_key)
+    return result
+```
+
+**Cleanup Summary:**
+- Files cleaned: 2 (cache.py, user.py)
+- Removed: 6 marker blocks total (20 lines)
+- Removed: 1 orphaned import (`time`)
+- Removed: 1 orphaned variable (`trace_id`)
+- Result: Original code preserved across both files
+
+---
+
+### Instrumentation Cleanup Rules
+
+1. **Complete removal**: Remove ALL DEBUG markers, logging statements, and temporary code
+2. **Preserve original**: Never remove code that existed before debugging session
+3. **Atomic operations**: Process each file completely before moving to next
+4. **Syntax verification**: Always verify code compiles after each file cleanup
+5. **Orphan cleanup**: Remove imports and variables added solely for debugging
+6. **Formatting**: Run configured linter/formatter after cleanup
+7. **Separate commit**: Cleanup must be separate commit from fix
+8. **Verification**: Run full integrity check before committing
+9. **Traceability**: Include session ID and reference fix commit in cleanup commit message
+10. **Fail-safe**: If cleanup fails, restore backup and report error (do not commit partial cleanup)
+
+---
+
+### Session Status Transitions
+
+**Entering Cleanup:**
+- Required status: `fix_verified`
+- Required fields: `verifiedFix` with fixId and commitSha
+
+**After Cleanup Success:**
+- New status: `cleanup_complete`
+- New fields: `cleanup` with commitSha, filesModified, markersRemoved, integrityVerification
+- Next phase: Success Summary Generation
+
+**Cleanup Never Fails** (by design):
+- If syntax errors after cleanup: restore backups, report in session, but don't fail debugging
+- If orphaned imports remain: warn but don't block (user can clean manually)
+- Session always proceeds to Success Summary even if minor cleanup issues
+
+---
+
+### Proceeding to Next Phase
+
+After cleanup completion:
+
+1. Session status updated to: `cleanup_complete`
+2. Cleanup details stored in session
+3. All temporary files deleted (`/tmp/debug-cleanup-*.txt`)
+4. **PROCEED TO: Success Summary Generation Phase**
+   - Generate comprehensive summary with root cause, fix, and learnings
+   - Include before/after code snippets
+   - Cite research sources
+   - Provide test location
+
+---
+
