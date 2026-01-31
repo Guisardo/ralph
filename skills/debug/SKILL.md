@@ -10220,3 +10220,485 @@ After generating and displaying the success summary:
 
 ---
 
+## Rollback and Failure Handling Workflow
+
+When debugging reaches iteration limits or encounters unrecoverable failures, use this template to gracefully rollback and provide comprehensive failure context.
+
+### Purpose
+
+The rollback workflow ensures:
+1. **Clean State Recovery**: All debugging changes are reverted to pre-debug state
+2. **Comprehensive Documentation**: Failure context preserved for future investigation
+3. **No Damage**: No partial fixes left behind, no orphaned code
+4. **Learnings Captured**: All hypotheses, research, and failure reasons documented
+
+### Step 1: Detect Rollback Trigger
+
+Monitor for these rollback conditions:
+
+**Automatic Triggers:**
+1. **Max Iterations Reached**: `iterationCount >= 5` (checked after each failed verification or analysis)
+2. **Unrecoverable Error**: Fix application fails with syntax errors in all attempted files
+3. **Cascade Failure**: Each fix attempt makes situation worse (error count increases)
+
+**Manual Triggers:**
+1. User explicitly requests rollback during long debugging session
+2. Timeout reached (30+ minutes elapsed without progress)
+
+**Session Check Template:**
+```json
+{
+  "rollbackCheck": {
+    "iterationCount": 2,
+    "maxIterations": 5,
+    "shouldRollback": false,
+    "reason": "none",
+    "checksPerformed": [
+      { "check": "iteration_limit", "passed": true },
+      { "check": "error_trend", "passed": true },
+      { "check": "time_elapsed", "passed": true },
+      { "check": "user_request", "passed": true }
+    ]
+  }
+}
+```
+
+### Step 2: Identify Initial State
+
+Retrieve the initial git state captured at debug start:
+
+**From Session:**
+```json
+{
+  "initialCommit": "abc123def456",
+  "startTime": "2024-01-31T10:00:00Z",
+  "gitStateCapture": {
+    "branch": "feature/fix-user-auth",
+    "uncommittedChanges": [],
+    "commits": [
+      { "sha": "abc123def456", "message": "last commit before debug", "time": "2024-01-31T09:55:00Z" }
+    ]
+  }
+}
+```
+
+**Verification Commands:**
+```bash
+# Get the exact initial commit
+INITIAL_COMMIT=$(jq -r '.initialCommit' .claude/debug-sessions/$SESSION_ID.json)
+
+# Get current state
+CURRENT_COMMIT=$(git rev-parse HEAD)
+
+# Count commits made during debugging
+COMMITS_DURING_DEBUG=$(git rev-list --count $INITIAL_COMMIT..$CURRENT_COMMIT)
+
+echo "Initial commit: $INITIAL_COMMIT"
+echo "Current commit: $CURRENT_COMMIT"
+echo "Commits made: $COMMITS_DURING_DEBUG"
+```
+
+### Step 3: Collect Failure Context
+
+Document comprehensive failure information before rollback:
+
+**Failure Context Schema:**
+```json
+{
+  "failureContext": {
+    "trigger": "max_iterations_reached",
+    "detectedAt": "2024-01-31T10:15:00Z",
+    "iterationCount": 5,
+    "hypothesesTested": [
+      {
+        "id": 1,
+        "category": "Null Reference",
+        "status": "rejected",
+        "reason": "Evidence showed variable was initialized",
+        "attemptedFixes": 2,
+        "totalTime": "3 minutes"
+      },
+      {
+        "id": 2,
+        "category": "Race Condition",
+        "status": "inconclusive",
+        "reason": "Logs showed timing issues but inconsistent",
+        "attemptedFixes": 3,
+        "totalTime": "5 minutes"
+      },
+      {
+        "id": 3,
+        "category": "Logic Error",
+        "status": "rejected",
+        "reason": "Fix changed behavior but didn't resolve original error",
+        "attemptedFixes": 2,
+        "totalTime": "4 minutes"
+      }
+    ],
+    "researchFindings": {
+      "queriesUsed": ["TypeError null reference JS", "race condition async await"],
+      "sourcesConsulted": 8,
+      "adequateCoverage": "partial"
+    },
+    "fixesAttempted": [
+      {
+        "fixId": "FIX_1",
+        "hypothesis": "HYP_1",
+        "approach": "Add null checks",
+        "filesModified": ["src/user.ts"],
+        "verificationResult": "failed",
+        "reason": "Error persisted, suggests different root cause"
+      },
+      {
+        "fixId": "FIX_2",
+        "hypothesis": "HYP_2",
+        "approach": "Add async/await",
+        "filesModified": ["src/service.ts", "src/controller.ts"],
+        "verificationResult": "regression",
+        "reason": "Fixed original error but introduced new timeout error"
+      }
+    ],
+    "lastLogs": {
+      "timestamp": "2024-01-31T10:14:55Z",
+      "errorMessage": "Still getting TypeError on line 45 after 5 attempts",
+      "markers": 12,
+      "excerpt": "[DEBUG_HYP_3_START] Hypothesis 3 test... [DEBUG_HYP_3_END]"
+    },
+    "totalTimeSpent": "12 minutes"
+  }
+}
+```
+
+### Step 4: Execute Complete Rollback
+
+Rollback all commits made during debugging:
+
+**Rollback Strategy:**
+
+1. **Check for uncommitted changes:**
+   ```bash
+   git status --porcelain > /tmp/uncommitted-before-rollback.txt
+   if [ -s /tmp/uncommitted-before-rollback.txt ]; then
+     echo "WARNING: Uncommitted changes exist, will be discarded"
+     cat /tmp/uncommitted-before-rollback.txt
+   fi
+   ```
+
+2. **Rollback commits using revert:**
+   ```bash
+   # List commits to revert
+   COMMITS_TO_REVERT=$(git rev-list --reverse $INITIAL_COMMIT..$CURRENT_COMMIT)
+
+   # Revert each commit
+   for COMMIT in $COMMITS_TO_REVERT; do
+     echo "Reverting commit $COMMIT..."
+     git revert --no-edit $COMMIT || {
+       echo "Revert failed for $COMMIT, attempting manual cleanup"
+       # Fall back to selective file checkout if revert fails
+     }
+   done
+   ```
+
+3. **Alternative: Reset to initial state if reverts fail:**
+   ```bash
+   # Last resort: reset hard to initial commit
+   git reset --hard $INITIAL_COMMIT
+   git clean -fd  # Remove untracked files
+   ```
+
+4. **Verify rollback success:**
+   ```bash
+   AFTER_ROLLBACK_COMMIT=$(git rev-parse HEAD)
+   if [ "$AFTER_ROLLBACK_COMMIT" = "$INITIAL_COMMIT" ]; then
+     echo "✓ Rollback successful: back to $INITIAL_COMMIT"
+   else
+     echo "✗ Rollback verification failed"
+     exit 1
+   fi
+   ```
+
+**Rollback Verification Checklist:**
+- [ ] All instrumentation commits reverted
+- [ ] All fix commits reverted
+- [ ] All cleanup commits reverted
+- [ ] Working directory clean (no modified files)
+- [ ] HEAD == initialCommit
+- [ ] No orphaned debug files remain
+
+### Step 5: Verify Instrumentation Cleanup
+
+Ensure NO debug markers remain after rollback:
+
+**Marker Verification:**
+```bash
+# Search for remaining DEBUG markers in all files
+REMAINING_MARKERS=$(grep -r "DEBUG_HYP_" --exclude-dir=node_modules --exclude-dir=.git . 2>/dev/null | wc -l)
+
+if [ "$REMAINING_MARKERS" -gt 0 ]; then
+  echo "WARNING: Found $REMAINING_MARKERS remaining DEBUG markers"
+  echo "Removing remaining markers..."
+
+  # Remove any remaining markers
+  find . -name "*.ts" -o -name "*.js" -o -name "*.py" | while read file; do
+    sed -i '/\/\/ DEBUG_HYP_/d' "$file"
+    sed -i '/# DEBUG_HYP_/d' "$file"
+  done
+else
+  echo "✓ All DEBUG markers successfully removed"
+fi
+```
+
+**Integrity Verification Template:**
+```json
+{
+  "rollbackIntegrity": {
+    "markersRemaining": 0,
+    "orphanedImports": 0,
+    "syntaxValid": true,
+    "fileCount": 42,
+    "checksPerformed": [
+      { "check": "no_debug_markers", "passed": true },
+      { "check": "no_orphaned_code", "passed": true },
+      { "check": "syntax_valid", "passed": true },
+      { "check": "git_clean", "passed": true },
+      { "check": "initial_state_restored", "passed": true }
+    ]
+  }
+}
+```
+
+### Step 6: Generate Failure Summary
+
+Create comprehensive documentation of failed debugging attempt:
+
+**Failure Summary Structure:**
+
+```markdown
+# Debug Session Failure Report
+
+**Session ID**: [session-id]
+**Date**: [date]
+**Duration**: [total time]
+**Status**: Failed - Max Iterations Reached
+
+## What Was Being Debugged
+
+**Issue Type**: [Type from intake]
+**Reproduction Steps**:
+[Steps from session]
+
+**Initial Error**:
+[Error message and stack trace]
+
+## Root Cause Analysis Attempts
+
+### Hypotheses Tested
+
+| # | Category | Status | Evidence | Time |
+|---|----------|--------|----------|------|
+| 1 | [Type] | Rejected | [Why ruled out] | 3m |
+| 2 | [Type] | Inconclusive | [Mixed signals] | 5m |
+| 3 | [Type] | Rejected | [Evidence against] | 4m |
+
+### Key Findings from Investigation
+
+- Finding 1: [Observation from logs]
+- Finding 2: [Observation from logs]
+- Finding 3: [Pattern observed]
+
+## Fixes Attempted and Results
+
+| Fix # | Hypothesis | Approach | Result | Why It Failed |
+|-------|-----------|----------|--------|---------------|
+| 1 | HYP_1 | [Brief description] | Failed | [Reason] |
+| 2 | HYP_2 | [Brief description] | Regression | [New error] |
+
+## Research Conducted
+
+**Queries Used**:
+- "error message" + language
+- "best practice" + framework
+- [Other queries]
+
+**Sources Consulted**: 8 sources
+**Key Findings**: [Summary of research findings that didn't lead to solution]
+
+## Recommended Next Steps for Manual Investigation
+
+1. **Review hypotheses #2**: Logs showed mixed signals - suggest adding more targeted instrumentation to confirm/reject
+2. **Consider cross-service issue**: Error timeline correlates with external API calls - investigate service dependencies
+3. **Expand search scope**: May be configuration-related - check environment variables, deployment differences
+4. **Consult team**: Similar error mentioned in team Slack - consider pairing with team member familiar with this code
+
+## Files Modified During Attempt
+
+[List all files that had instrumentation added - these have been reverted]
+
+## Session Artifacts
+
+- Failed session: .claude/debug-sessions/FAILURE-[session-id].md (this file)
+- Session record deleted (contained 5 iterations of data)
+- Initial state restored: Commit [initial-commit]
+- All debug markers removed: ✓ Verified
+
+---
+
+**Next Steps**:
+1. Review this failure report
+2. Consider manual investigation strategies suggested above
+3. If retrying with /debug, start with fresh session - new insights may emerge with different approach
+```
+
+**Example Failure Summary:**
+
+```
+# Debug Session Failure Report
+
+**Session ID**: sess_1704070200_m1n2o3p4
+**Date**: 2024-01-31
+**Duration**: 12 minutes
+**Status**: Failed - Max Iterations Reached (5 attempts)
+
+## What Was Being Debugged
+
+**Issue Type**: Intermittent Runtime Error
+**Reproduction Steps**:
+1. Run load test: `npm run test:load`
+2. Watch for random "Cannot read property 'id' of null" errors
+3. Errors appear ~5% of the time under 50+ concurrent connections
+
+**Initial Error**:
+```
+TypeError: Cannot read property 'id' of null
+  at UserService.getProfile (src/services/user.ts:45:23)
+  at async Router.handle (src/controllers/user.ts:12:8)
+```
+
+## Root Cause Analysis Attempts
+
+### Hypotheses Tested
+
+| # | Category | Status | Evidence | Time |
+|---|----------|--------|----------|------|
+| 1 | Null Reference (cache miss) | Rejected | Cache was populated, error occurred anyway | 3m |
+| 2 | Race Condition (async init) | Inconclusive | Logs showed timing issues but inconsistent | 5m |
+| 3 | Logic Error (wrong condition) | Rejected | Logic was correct in all code paths | 4m |
+
+## Fixes Attempted
+
+| Fix # | Hypothesis | Approach | Result | Reason Failed |
+|-------|-----------|----------|--------|---------------|
+| 1 | HYP_1 | Add null checks before .id access | Failed | Error still occurred in 2% of runs |
+| 2 | HYP_2 | Add async/await to initialization | Regression | Fixed original error but new timeout errors appeared |
+
+## Recommended Next Steps
+
+1. **Add distributed tracing**: Correlation IDs across services to understand full flow
+2. **Check for external service issues**: May be timeout from upstream API
+3. **Review deployment config**: Differences between dev and production environments
+4. **Consider database connection pool**: Pool exhaustion under load
+```
+
+### Step 7: Save Failure Summary
+
+Store failure documentation:
+
+```bash
+# Save failure summary
+FAILURE_FILE=".claude/debug-sessions/FAILURE-${SESSION_ID}.md"
+echo "$FAILURE_SUMMARY" > "$FAILURE_FILE"
+
+# Update session with failure status
+SESSION_FILE=".claude/debug-sessions/${SESSION_ID}.json"
+jq '.status = "failed" | .failureContext = $CONTEXT | .completedAt = now | del(.hypotheses[].instrumentation)' \
+  --arg CONTEXT "$FAILURE_CONTEXT_JSON" \
+  "$SESSION_FILE" > "${SESSION_FILE}.tmp"
+mv "${SESSION_FILE}.tmp" "$SESSION_FILE"
+```
+
+### Step 8: Cleanup and Final Status
+
+After rollback completion:
+
+1. **Keep failure summary:** `.claude/debug-sessions/FAILURE-[session-id].md` (for reference)
+2. **Update session file:** Mark as `failed` with failure context
+3. **Display to user:** Show failure summary with recommendations
+4. **Return status:** Exit code 1 (failure)
+5. **Optional:** User can keep session JSON for manual review, or delete it
+
+**Session Final State:**
+```json
+{
+  "sessionId": "sess_1704070200_m1n2o3p4",
+  "status": "failed",
+  "failureReason": "max_iterations_reached",
+  "completedAt": "2024-01-31T10:15:30Z",
+  "iterationCount": 5,
+  "hypothesesTested": 3,
+  "hypothesesConfirmed": 0,
+  "hypothesesRejected": 2,
+  "hypothesesInconclusive": 1,
+  "fixesAttempted": 2,
+  "totalTime": "12 minutes",
+  "rollbackStatus": "successful",
+  "failureSummaryLocation": ".claude/debug-sessions/FAILURE-sess_1704070200_m1n2o3p4.md"
+}
+```
+
+### Rollback Rules
+
+1. **Always rollback completely**: Never leave partial fixes behind
+2. **Preserve failure context**: Capture all hypothesis/research/fix data before rollback
+3. **Verify clean state**: Confirm all markers removed, working directory clean
+4. **Document reasons**: Failure summary must explain why each fix didn't work
+5. **Recommend next steps**: Provide actionable suggestions for manual investigation
+6. **No blame**: Frame as "debugging workflow reached iteration limit, not a failure of approach"
+7. **Session cleanup**: Delete JSON after user reviews, keep MD for reference
+8. **Time limit**: Enforce 30-minute timeout to prevent endless debugging
+9. **Graceful failure**: Return helpful failure summary, not cryptic error
+10. **Exit status**: Return code 1 to indicate rollback occurred
+
+### Rollback Decision Tree
+
+```
+Debug Cycle Complete?
+├─ YES (fix verified)
+│  └─ Generate Success Summary → COMPLETE
+│
+└─ NO (fix failed)
+   ├─ Iterations remaining < 5?
+   │  ├─ YES
+   │  │  ├─ Can retry with different hypothesis?
+   │  │  │  ├─ YES → Return to Hypothesis Generation (iteration loop)
+   │  │  │  └─ NO → Trigger rollback
+   │  │  └─ Time remaining < 30 minutes?
+   │  │     ├─ YES → Retry
+   │  │     └─ NO → Trigger rollback
+   │  │
+   │  └─ NO (iterations maxed)
+   │     └─ Trigger complete rollback → Generate Failure Summary
+   │
+   └─ User requested rollback?
+      └─ Trigger rollback immediately
+```
+
+### Integration Points
+
+**After Max Iterations Check in Fix Verification:**
+```
+Fix Verification Phase (US-013) completes
+  ↓
+Check: iterationCount >= 5?
+  ├─ YES → **Trigger Rollback Phase (US-016)**
+  │        1. Collect failure context
+  │        2. Execute rollback
+  │        3. Verify markers removed
+  │        4. Generate failure summary
+  │        5. Display to user
+  │        6. Return exit code 1
+  │
+  └─ NO → Return to Hypothesis Generation (US-010)
+```
+
+---
+
