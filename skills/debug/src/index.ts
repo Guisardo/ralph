@@ -33,3 +33,10 @@ export type {
   APIEndpoint,
   DependencyGraphConfig,
 } from './DependencyGraph';
+
+export { HypothesisGenerator } from './HypothesisGenerator';
+export type {
+  IssueContext,
+  CodeAnalysisContext,
+  HypothesisGeneratorConfig,
+} from './HypothesisGenerator';
