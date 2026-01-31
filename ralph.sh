@@ -50,10 +50,18 @@ if [[ "$INTERACTIVE" == true && "$TOOL" == "amp" ]]; then
   INTERACTIVE=false
 fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRD_FILE="$SCRIPT_DIR/prd.json"
-PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
+PRD_FILE="$PWD/ralph/prd.json"
+PROGRESS_FILE="$PWD/ralph/progress.txt"
 ARCHIVE_DIR="$SCRIPT_DIR/archive"
 LAST_BRANCH_FILE="$SCRIPT_DIR/.last-branch"
+
+if [[ "$TOOL" == "amp" ]]; then
+  # prompt.md with prd.json and progress.txt path substituted
+  sed -e "s|\`prd.json\`|\`$PRD_FILE\`|" -e "s|\`progress.txt\`|\`$PROGRESS_FILE\`|" "$SCRIPT_DIR/prompt.md" > prompt.md.tmp
+else
+  # claude prompt content with prd.json and progress.txt path substituted
+  sed -e "s|\`prd.json\`|\`$PRD_FILE\`|" -e "s|\`progress.txt\`|\`$PROGRESS_FILE\`|" "$SCRIPT_DIR/CLAUDE.md" > prompt.md.tmp
+fi
 
 # Archive previous run if branch changed
 if [ -f "$PRD_FILE" ] && [ -f "$LAST_BRANCH_FILE" ]; then
@@ -134,17 +142,25 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     echo "Story reasoning level: $REASONING_LEVEL → Using model: $MODEL"
   fi
 
+  # Print story id
+  if [ -f "$PRD_FILE" ]; then
+    STORY_ID=$(jq -r '.userStories[] | select(.passes != true) | .id' "$PRD_FILE" 2>/dev/null | head -1)
+    if [ -n "$STORY_ID" ] && [ "$STORY_ID" != "null" ]; then
+      echo "Current story ID: $STORY_ID"
+    fi
+  fi
+
   # Run the selected tool with the ralph prompt
   if [[ "$TOOL" == "amp" ]]; then
-    OUTPUT=$(cat "$SCRIPT_DIR/prompt.md" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr) || true
+    OUTPUT=$(cat "$SCRIPT_DIR/prompt.md.tmp" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr) || true
   else
     if [[ "$INTERACTIVE" == true ]]; then
       # Claude Code: interactive mode - user approves tool usage, no --print for interactive UI
-      claude --model "$MODEL" < "$SCRIPT_DIR/CLAUDE.md" || true
+      claude --model "$MODEL" < "$SCRIPT_DIR/prompt.md.tmp" || true
       OUTPUT=""  # In interactive mode, we can't capture output easily
     else
       # Claude Code: autonomous mode - use --dangerously-skip-permissions and --print for output
-      OUTPUT=$(claude --model "$MODEL" --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || true
+      OUTPUT=$(claude --model "$MODEL" --dangerously-skip-permissions --print < "$SCRIPT_DIR/prompt.md.tmp" 2>&1 | tee /dev/stderr) || true
     fi
   fi
   
