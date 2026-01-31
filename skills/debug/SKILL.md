@@ -4461,6 +4461,578 @@ After reproduction is complete and logs are captured:
 
 ---
 
+## Flaky Test Handling Workflow Template
+
+When debugging intermittent/flaky issues (detected by keywords in intake or user specification), use this workflow to ensure fixes are verified through multiple test runs before proceeding to cleanup.
+
+### Overview
+
+**Purpose:** Handle issues that don't reproduce consistently by requiring N consecutive successful test passes before considering the issue resolved.
+
+**When to use:**
+- Session has `isFlaky: true` (set during intake if flaky keywords detected)
+- User explicitly requests multiple verification runs
+- Issue is described as intermittent, occasionally failing, or timing-dependent
+
+**Success count default:** 1 for deterministic issues, 5 for flaky issues (user can specify custom count)
+
+---
+
+### Step 1: Check Flaky Status
+
+After reproduction completes, check if flaky handling is needed:
+
+```typescript
+// Check session for flaky status
+const session = readSession(sessionId);
+
+if (!session.isFlaky) {
+  // Deterministic issue - single reproduction sufficient
+  // Proceed directly to Log Analysis Phase
+  return proceedToLogAnalysis(session);
+}
+
+// Flaky issue detected - multiple runs required
+console.log(`Flaky issue detected. Success count required: ${session.successCount}`);
+```
+
+**Decision tree:**
+- If `isFlaky: false` → Skip this phase, proceed to Log Analysis
+- If `isFlaky: true` → Execute flaky test handling workflow
+
+---
+
+### Step 2: Verify Success Count Configuration
+
+Ensure the session has a valid success count configured:
+
+```json
+{
+  "sessionId": "sess_20250131_abc123",
+  "isFlaky": true,
+  "successCount": 5,
+  "flakyKeywordsDetected": ["intermittent", "sometimes", "race condition"],
+  "reproductionRuns": [
+    {
+      "runId": "run_001",
+      "reproduced": true,
+      "notes": "Issue reproduced on first attempt"
+    }
+  ]
+}
+```
+
+**Success count guidelines:**
+- **Default for flaky issues:** 5 consecutive passes
+- **User-specified:** Accept any value from 1-20
+- **Conservative approach:** Higher counts = more confidence but longer verification time
+- **Recommendation:** 5 passes for race conditions, 3 passes for timing issues, 10+ for critical production issues
+
+---
+
+### Step 3: Execute Multiple Test Runs
+
+Run the test repeatedly until N consecutive passes are achieved OR max attempts reached.
+
+#### Multiple Run Strategy
+
+**Approach:**
+1. Use the same test from Issue Reproduction phase (automated test file or manual script)
+2. Run test repeatedly, tracking consecutive pass/fail results
+3. Reset consecutive counter on any failure
+4. Continue until N consecutive passes OR max attempts (50 runs)
+
+**Execution template:**
+
+```bash
+# For automated tests
+CONSECUTIVE_PASSES=0
+REQUIRED_PASSES=5
+MAX_ATTEMPTS=50
+ATTEMPT=0
+
+while [ $CONSECUTIVE_PASSES -lt $REQUIRED_PASSES ] && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+  ATTEMPT=$((ATTEMPT + 1))
+  echo "Attempt $ATTEMPT: Running test (consecutive passes: $CONSECUTIVE_PASSES/$REQUIRED_PASSES)"
+
+  # Run the test (adjust command for framework)
+  if npm test -- test/debug/reproduction-HYP_1.test.js > "logs/flaky-run-$ATTEMPT.log" 2>&1; then
+    CONSECUTIVE_PASSES=$((CONSECUTIVE_PASSES + 1))
+    echo "✓ PASS (consecutive: $CONSECUTIVE_PASSES)"
+  else
+    echo "✗ FAIL (resetting consecutive counter)"
+    CONSECUTIVE_PASSES=0
+  fi
+
+  # Small delay between runs to avoid resource contention
+  sleep 1
+done
+
+if [ $CONSECUTIVE_PASSES -ge $REQUIRED_PASSES ]; then
+  echo "Success: Achieved $REQUIRED_PASSES consecutive passes after $ATTEMPT attempts"
+  exit 0
+else
+  echo "Failure: Max attempts ($MAX_ATTEMPTS) reached without $REQUIRED_PASSES consecutive passes"
+  exit 1
+fi
+```
+
+**For manual reproduction:**
+
+Generate a script that guides the user through multiple runs:
+
+```markdown
+# Flaky Issue Verification Script
+
+This issue requires **5 consecutive successful reproductions** to verify the fix.
+
+## Instructions
+
+Run the following steps **repeatedly** and track your results:
+
+1. [Reproduction step 1]
+2. [Reproduction step 2]
+3. [Reproduction step 3]
+4. Observe: [Expected behavior]
+
+## Tracking Sheet
+
+Copy this table and fill in results after each run:
+
+| Attempt | Result (PASS/FAIL) | Consecutive Passes | Notes |
+|---------|--------------------|--------------------|-------|
+| 1       |                    | 0                  |       |
+| 2       |                    | 0                  |       |
+| 3       |                    | 0                  |       |
+| 4       |                    | 0                  |       |
+| 5       |                    | 0                  |       |
+
+**Rules:**
+- PASS = issue does NOT occur (expected behavior observed)
+- FAIL = issue DOES occur (unexpected behavior observed)
+- On FAIL: Reset "Consecutive Passes" counter to 0
+- Continue until you achieve **5 consecutive PASS results**
+- If you reach 50 attempts without 5 consecutive passes, report failure
+
+## When Complete
+
+Report back with:
+- Total attempts needed: ___
+- Pattern observed (if any): ___
+- Final verdict: VERIFIED (5 consecutive passes) or NOT VERIFIED (max attempts reached)
+```
+
+---
+
+### Step 4: Update Session with Run Results
+
+After each test run, update the session with detailed results:
+
+```json
+{
+  "sessionId": "sess_20250131_abc123",
+  "isFlaky": true,
+  "successCount": 5,
+  "reproductionRuns": [
+    {
+      "runId": "run_001",
+      "timestamp": "2025-01-31T10:00:00Z",
+      "hypothesisId": "HYP_1",
+      "method": "automated",
+      "testFile": "test/debug/reproduction-HYP_1.test.js",
+      "testCommand": "npm test -- test/debug/reproduction-HYP_1.test.js",
+      "exitCode": 0,
+      "duration": 2.3,
+      "reproduced": true,
+      "notes": "Initial reproduction - issue observed"
+    },
+    {
+      "runId": "run_002",
+      "timestamp": "2025-01-31T10:05:00Z",
+      "hypothesisId": "HYP_1",
+      "method": "automated",
+      "testFile": "test/debug/reproduction-HYP_1.test.js",
+      "testCommand": "npm test -- test/debug/reproduction-HYP_1.test.js",
+      "exitCode": 1,
+      "duration": 2.1,
+      "reproduced": false,
+      "notes": "Run 1 of flaky verification - PASS"
+    },
+    {
+      "runId": "run_003",
+      "timestamp": "2025-01-31T10:05:05Z",
+      "hypothesisId": "HYP_1",
+      "method": "automated",
+      "testFile": "test/debug/reproduction-HYP_1.test.js",
+      "testCommand": "npm test -- test/debug/reproduction-HYP_1.test.js",
+      "exitCode": 0,
+      "duration": 2.4,
+      "reproduced": true,
+      "notes": "Run 2 of flaky verification - FAIL (reset consecutive counter)"
+    }
+  ],
+  "flakyVerification": {
+    "requiredConsecutivePasses": 5,
+    "currentConsecutivePasses": 0,
+    "totalAttempts": 2,
+    "maxAttempts": 50,
+    "runHistory": ["PASS", "FAIL"],
+    "status": "in_progress"
+  }
+}
+```
+
+**New session fields for flaky tracking:**
+- `flakyVerification` (object): Tracks multi-run verification state
+  - `requiredConsecutivePasses` (number): How many consecutive passes needed
+  - `currentConsecutivePasses` (number): Current streak of passes
+  - `totalAttempts` (number): Total runs so far
+  - `maxAttempts` (number): Maximum runs before giving up (default: 50)
+  - `runHistory` (array): ["PASS", "FAIL", "PASS", ...] for analysis
+  - `status` (string): `in_progress`, `verified`, or `failed`
+
+---
+
+### Step 5: Analyze Run Pattern
+
+After completing all runs (success or failure), analyze the pattern:
+
+```typescript
+function analyzeRunPattern(runHistory: string[]): FlakyAnalysis {
+  const totalRuns = runHistory.length;
+  const passCount = runHistory.filter(r => r === "PASS").length;
+  const failCount = runHistory.filter(r => r === "FAIL").length;
+  const successRate = (passCount / totalRuns) * 100;
+
+  // Identify failure clustering
+  const failureIndexes = runHistory
+    .map((r, i) => r === "FAIL" ? i : -1)
+    .filter(i => i >= 0);
+
+  const isClustered = analyzeClusteringPattern(failureIndexes);
+
+  return {
+    totalRuns,
+    passCount,
+    failCount,
+    successRate,
+    failurePattern: isClustered ? "clustered" : "random",
+    longestPassStreak: calculateLongestStreak(runHistory, "PASS"),
+    longestFailStreak: calculateLongestStreak(runHistory, "FAIL"),
+    notes: generatePatternNotes(runHistory)
+  };
+}
+```
+
+**Pattern analysis insights:**
+- **High success rate (>80%)**: Issue may be timing-dependent or resource contention
+- **Low success rate (<50%)**: Issue may be common but masked in single-run testing
+- **Clustered failures**: May indicate warmup issue, cache state, or environment drift
+- **Random failures**: True race condition or non-deterministic behavior
+
+---
+
+### Step 6: Determine Outcome
+
+Based on the run results, determine whether to proceed or return to hypothesis generation:
+
+#### Outcome A: Verification Successful
+
+**Condition:** Achieved N consecutive passes within max attempts
+
+**Actions:**
+1. Update session status to `flakyVerification.status: "verified"`
+2. Add verification summary to session:
+
+```json
+{
+  "flakyVerification": {
+    "status": "verified",
+    "requiredConsecutivePasses": 5,
+    "totalAttempts": 23,
+    "successRate": 78.26,
+    "failurePattern": "random",
+    "longestPassStreak": 5,
+    "verifiedAt": "2025-01-31T10:30:00Z",
+    "summary": "Achieved 5 consecutive passes after 23 attempts. Issue appears to be a true race condition with ~78% success rate."
+  }
+}
+```
+
+3. **Proceed to Cleanup Phase** (instrumentation removal)
+4. Display success message:
+
+```
+✓ Flaky issue verified successfully
+
+Required: 5 consecutive passes
+Total attempts: 23
+Success rate: 78.26%
+Pattern: Random failures (likely race condition)
+
+Proceeding to cleanup phase to remove instrumentation...
+```
+
+#### Outcome B: Verification Failed
+
+**Condition:** Reached max attempts (50 runs) without achieving N consecutive passes
+
+**Actions:**
+1. Update session status to `flakyVerification.status: "failed"`
+2. Add failure analysis to session:
+
+```json
+{
+  "flakyVerification": {
+    "status": "failed",
+    "requiredConsecutivePasses": 5,
+    "maxConsecutivePasses": 3,
+    "totalAttempts": 50,
+    "successRate": 42.0,
+    "failurePattern": "clustered",
+    "longestPassStreak": 3,
+    "failedAt": "2025-01-31T10:45:00Z",
+    "summary": "Failed to achieve 5 consecutive passes after 50 attempts. Maximum consecutive passes: 3. Failures appear clustered, suggesting environment or state dependency."
+  }
+}
+```
+
+3. **Return to Hypothesis Generation** with context from failed runs:
+   - Current hypothesis is rejected (fix did not resolve flakiness)
+   - Generate new hypotheses informed by run pattern:
+     - If clustered failures: investigate state carryover, warmup issues
+     - If random failures: investigate deeper race conditions, external dependencies
+     - If low success rate: hypothesis may be partially correct but incomplete
+
+4. Display failure message:
+
+```
+✗ Flaky verification failed
+
+Required: 5 consecutive passes
+Max consecutive: 3 (out of 50 attempts)
+Success rate: 42.0%
+Pattern: Clustered failures (potential state dependency)
+
+Current hypothesis rejected. Generating new hypotheses based on run pattern...
+```
+
+5. Increment `iterationCount` and check against `maxIterations` (5)
+   - If iterations remaining: Generate new hypotheses and retry
+   - If max iterations reached: Trigger rollback and failure handling
+
+---
+
+### Step 7: Session Status Transition
+
+Update session status based on outcome:
+
+**Success path:**
+```json
+{
+  "status": "flaky_verified",
+  "flakyVerification": { "status": "verified" }
+}
+```
+→ Proceed to **Cleanup Phase**
+
+**Failure path:**
+```json
+{
+  "status": "hypothesis_rejected",
+  "flakyVerification": { "status": "failed" },
+  "iterationCount": 2
+}
+```
+→ Return to **Hypothesis Generation Phase**
+
+---
+
+### Step 8: Flaky Handling Rules
+
+1. **Always reset consecutive counter on failure** - a single failure breaks the streak
+2. **Enforce max attempts** - prevent infinite loops (default: 50 runs)
+3. **Track all runs in session** - enables pattern analysis and debugging
+4. **Provide clear feedback** - show progress during multi-run verification
+5. **Short delays between runs** - prevent resource contention (1-2 seconds)
+6. **Analyze pattern on completion** - provide insights regardless of outcome
+7. **Use pattern to inform next hypothesis** - if verification fails, learn from run distribution
+8. **Never skip flaky handling** - if `isFlaky: true`, always execute multiple runs
+9. **Allow user override** - user can adjust success count or max attempts if needed
+10. **Time-box verification** - if runs take too long, consider timeout (e.g., 30 minutes total)
+
+---
+
+### Step 9: User Feedback During Runs
+
+For long-running verifications, provide progress updates:
+
+**Console output template:**
+```
+Flaky Issue Verification in Progress
+====================================
+
+Required: 5 consecutive passes
+Max attempts: 50
+
+Attempt  1: ✓ PASS (consecutive: 1)
+Attempt  2: ✓ PASS (consecutive: 2)
+Attempt  3: ✗ FAIL (consecutive: 0) - Issue observed: TypeError at line 45
+Attempt  4: ✓ PASS (consecutive: 1)
+Attempt  5: ✓ PASS (consecutive: 2)
+Attempt  6: ✓ PASS (consecutive: 3)
+Attempt  7: ✓ PASS (consecutive: 4)
+Attempt  8: ✓ PASS (consecutive: 5) ← SUCCESS!
+
+Total attempts: 8
+Success rate: 87.5%
+Pattern: Early failure followed by consistent success (potential warmup issue)
+
+✓ Verification complete - proceeding to cleanup
+```
+
+**For manual reproduction:**
+
+Provide a clear checklist and status tracker that the user can update.
+
+---
+
+### Example: Complete Flaky Handling Flow
+
+**Scenario:** Race condition in async handler
+
+**Initial state:**
+```json
+{
+  "sessionId": "sess_20250131_abc123",
+  "issueType": "Intermittent/Flaky Issue",
+  "issueDescription": "API endpoint sometimes returns 500, sometimes succeeds",
+  "isFlaky": true,
+  "successCount": 5,
+  "flakyKeywordsDetected": ["sometimes", "intermittent"]
+}
+```
+
+**After initial reproduction:**
+```json
+{
+  "reproductionRuns": [
+    {
+      "runId": "run_001",
+      "reproduced": true,
+      "notes": "Issue reproduced - 500 error observed"
+    }
+  ]
+}
+```
+
+**After instrumentation and fix application:**
+```json
+{
+  "fixesAttempted": [
+    {
+      "fixId": "FIX_1",
+      "hypothesisId": "HYP_1",
+      "description": "Added mutex lock around shared cache access"
+    }
+  ]
+}
+```
+
+**Flaky verification begins:**
+
+```
+Starting flaky verification for FIX_1...
+Required: 5 consecutive passes
+
+Attempt  1: ✓ PASS (consecutive: 1)
+Attempt  2: ✓ PASS (consecutive: 2)
+Attempt  3: ✗ FAIL (consecutive: 0) - 500 error still occurs
+Attempt  4: ✓ PASS (consecutive: 1)
+Attempt  5: ✗ FAIL (consecutive: 0) - 500 error still occurs
+Attempt  6: ✓ PASS (consecutive: 1)
+Attempt  7: ✓ PASS (consecutive: 2)
+...
+Attempt 48: ✗ FAIL (consecutive: 0)
+Attempt 49: ✓ PASS (consecutive: 1)
+Attempt 50: ✗ FAIL (consecutive: 0)
+
+✗ Max attempts (50) reached without 5 consecutive passes
+Max consecutive: 4
+Success rate: 58%
+Pattern: Random failures
+
+Rejecting HYP_1. Generating new hypothesis based on run pattern...
+```
+
+**Session updated:**
+```json
+{
+  "iterationCount": 2,
+  "hypotheses": [
+    {
+      "id": "HYP_1",
+      "status": "rejected",
+      "rejectionReason": "Fix did not achieve required flaky verification (max 4 consecutive passes in 50 attempts)"
+    },
+    {
+      "id": "HYP_2",
+      "description": "Race condition involves multiple async paths, not just cache access",
+      "category": "race_condition",
+      "status": "pending",
+      "generatedFrom": "Failed flaky verification pattern analysis - random failures suggest deeper concurrency issue"
+    }
+  ],
+  "flakyVerification": {
+    "status": "failed",
+    "totalAttempts": 50,
+    "maxConsecutivePasses": 4,
+    "successRate": 58.0
+  }
+}
+```
+
+**Outcome:** Return to hypothesis generation for iteration 2, informed by the flaky verification failure pattern.
+
+---
+
+### Integration with Other Phases
+
+**From: Issue Reproduction Phase**
+- Input: `isFlaky` flag from session
+- Input: Initial reproduction run in `reproductionRuns` array
+- Input: Test file/script for running multiple times
+
+**To: Log Analysis Phase** (if verification succeeds)
+- Output: Verified fix with multi-run confidence
+- Output: Pattern analysis for documentation
+
+**To: Hypothesis Generation Phase** (if verification fails)
+- Output: Rejected hypothesis with failure context
+- Output: Run pattern analysis to inform next hypothesis
+- Output: Incremented iteration count
+
+---
+
+### Proceeding to Next Phase
+
+After flaky test handling completes:
+
+1. **Session updated** with `flakyVerification` object and final status
+2. **Run history stored** for pattern analysis and documentation
+3. **Outcome determined**: verified or failed
+
+**If verification succeeded:**
+- Status: `flaky_verified`
+- **Proceed to:** Cleanup Phase (remove instrumentation)
+
+**If verification failed:**
+- Status: `hypothesis_rejected`
+- **Proceed to:** Hypothesis Generation Phase (generate new hypotheses from run pattern)
+- **Check:** Iteration count vs max iterations (5) - may trigger rollback if limit reached
+
+---
+
 ## The Job
 
 The debug skill implements a complete debugging workflow:
