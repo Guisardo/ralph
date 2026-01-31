@@ -16,3 +16,13 @@ export type {
 
 export { performIntake, detectFlakyIssue, generateSessionId } from './intake';
 export type { IssueIntakeInput, IntakeResult } from './intake';
+
+export { CodeAnalyzer } from './CodeAnalyzer';
+export type {
+  Language,
+  FunctionDefinition,
+  ClassDefinition,
+  ImportStatement,
+  ErrorHandlingBlock,
+  CodeAnalysisResult,
+} from './CodeAnalyzer';
