@@ -4,6 +4,8 @@ You are an autonomous coding agent working on a software project.
 
 ## Your Task
 
+**CRITICAL: You MUST complete only ONE user story per invocation. After finishing one story (or if blocked), STOP immediately. Do NOT continue to the next story.**
+
 1. Read the PRD at `prd.json` (in the same directory as this file)
 2. Read the progress log at `progress.txt` (check Codebase Patterns section first)
 3. Check you're on the correct branch from PRD `branchName`. If not, check it out or create from main.
@@ -113,14 +115,26 @@ For any story that changes UI, you MUST verify it works in the browser using Sel
 
 A frontend story is NOT complete until browser verification passes. If Selenium MCP is not configured, note in your progress report that manual browser verification is needed.
 
-## Stop Condition
+## Stop Condition - CRITICAL
 
-After completing a user story, check if ALL stories have `passes: true`.
+**YOU MUST WORK ON ONLY ONE STORY PER ITERATION AND THEN STOP.**
 
-If ALL stories are complete and passing, reply with:
-<promise>COMPLETE</promise>
+After completing a single user story, immediately check the completion status:
 
-If there are still stories with `passes: false`, end your response normally (another iteration will pick up the next story).
+**Scenario 1: More work remains**
+- If there are ANY stories with `passes: false`, STOP IMMEDIATELY after completing the current story
+- Do NOT pick up the next story
+- Do NOT continue to another story
+- Simply end your response - the ralph.sh script will start a new iteration to handle the next story
+
+**Scenario 2: All work complete**
+- If ALL stories have `passes: true` (no stories remain with `passes: false`), output this exact tag:
+  ```
+  <promise>COMPLETE</promise>
+  ```
+- This signals to ralph.sh that the entire project is complete
+
+**IMPORTANT: You are invoked once per story. After completing one story, STOP. Do not continue.**
 
 ## Jira Integration (Optional)
 
@@ -461,7 +475,7 @@ All Jira operations are non-blocking - failures do not stop the workflow.
 
 ## Important
 
-- Work on ONE story per iteration
+- Work on ONLY ONE story per iteration - STOP after completing one story
 - Commit frequently
 - Keep CI green
 - Read the Codebase Patterns section in progress.txt before starting
