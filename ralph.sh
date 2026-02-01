@@ -186,7 +186,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
       claude --model "$MODEL" --dangerously-skip-permissions --print \
         --output-format stream-json --verbose --include-partial-messages \
         < "$PWD/ralph/prompt.md.tmp" 2>&1 | tee "$OUTPUT_FILE" | \
-        jq -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text'
+        jq --unbuffered -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text'
       EXIT_CODE=${PIPESTATUS[0]}
 
       # Extract text from stream-json output for completion check
