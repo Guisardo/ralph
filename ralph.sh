@@ -119,6 +119,9 @@ map_reasoning_to_model() {
   esac
 }
 
+# Create temporary output file for streaming
+OUTPUT_FILE="$PWD/ralph/.output.tmp"
+
 for i in $(seq 1 $MAX_ITERATIONS); do
   echo ""
   echo "==============================================================="
@@ -152,15 +155,42 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
   # Run the selected tool with the ralph prompt
   if [[ "$TOOL" == "amp" ]]; then
-    OUTPUT=$(cat "$PWD/ralph/prompt.md.tmp" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr) || true
+    # Run Amp and stream output to file + console
+    cat "$PWD/ralph/prompt.md.tmp" | amp --dangerously-allow-all > "$OUTPUT_FILE" 2>&1 &
+    AMP_PID=$!
+
+    # Stream output in real-time
+    tail -f "$OUTPUT_FILE" 2>/dev/null &
+    TAIL_PID=$!
+
+    # Wait for Amp to finish
+    wait $AMP_PID || true
+    EXIT_CODE=$?
+
+    # Stop tailing and give it a moment to finish
+    kill $TAIL_PID 2>/dev/null || true
+    wait $TAIL_PID 2>/dev/null || true
+    sleep 0.5
+
+    # Read final output for completion check
+    OUTPUT=$(cat "$OUTPUT_FILE" 2>/dev/null || echo "")
   else
     if [[ "$INTERACTIVE" == true ]]; then
       # Claude Code: interactive mode - user approves tool usage, no --print for interactive UI
       claude --model "$MODEL" < "$PWD/ralph/prompt.md.tmp" || true
       OUTPUT=""  # In interactive mode, we can't capture output easily
     else
-      # Claude Code: autonomous mode - use --dangerously-skip-permissions and --print for output
-      OUTPUT=$(claude --model "$MODEL" --dangerously-skip-permissions --print < "$PWD/ralph/prompt.md.tmp" 2>&1 | tee /dev/stderr) || true
+      # Claude Code: autonomous mode with real-time streaming output
+      # Use stream-json format with print, verbose, and partial messages for real-time output
+      # Stream to console while capturing full output for completion check
+      claude --model "$MODEL" --dangerously-skip-permissions --print \
+        --output-format stream-json --verbose --include-partial-messages \
+        < "$PWD/ralph/prompt.md.tmp" 2>&1 | tee "$OUTPUT_FILE" | \
+        jq --unbuffered -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text'
+      EXIT_CODE=${PIPESTATUS[0]}
+
+      # Extract text from stream-json output for completion check
+      OUTPUT=$(jq -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text' "$OUTPUT_FILE" 2>/dev/null || echo "")
     fi
   fi
   
@@ -170,6 +200,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     if [ -f "$PRD_FILE" ]; then
       INCOMPLETE=$(jq '[.userStories[] | select(.passes != true)] | length' "$PRD_FILE" 2>/dev/null || echo "1")
       if [[ "$INCOMPLETE" == "0" ]]; then
+        rm -f "$OUTPUT_FILE"
         echo ""
         echo "Ralph completed all tasks!"
         echo "Completed at iteration $i of $MAX_ITERATIONS"
@@ -177,15 +208,22 @@ for i in $(seq 1 $MAX_ITERATIONS); do
       fi
     fi
   elif echo "$OUTPUT" | grep -q "<promise>COMPLETE</promise>"; then
+    rm -f "$OUTPUT_FILE"
     echo ""
     echo "Ralph completed all tasks!"
     echo "Completed at iteration $i of $MAX_ITERATIONS"
     exit 0
   fi
-  
+
+  # Clean up output file for next iteration
+  rm -f "$OUTPUT_FILE"
+
   echo "Iteration $i complete. Continuing..."
   sleep 2
 done
+
+# Final cleanup
+rm -f "$OUTPUT_FILE"
 
 echo ""
 echo "Ralph reached max iterations ($MAX_ITERATIONS) without completing all tasks."
