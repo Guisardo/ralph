@@ -180,25 +180,17 @@ for i in $(seq 1 $MAX_ITERATIONS); do
       claude --model "$MODEL" < "$PWD/ralph/prompt.md.tmp" || true
       OUTPUT=""  # In interactive mode, we can't capture output easily
     else
-      # Claude Code: autonomous mode - use --dangerously-skip-permissions and --print for output
-      claude --model "$MODEL" --dangerously-skip-permissions --print < "$PWD/ralph/prompt.md.tmp" > "$OUTPUT_FILE" 2>&1 &
-      CLAUDE_PID=$!
+      # Claude Code: autonomous mode with real-time streaming output
+      # Use stream-json format with print, verbose, and partial messages for real-time output
+      # Stream to console while capturing full output for completion check
+      claude --model "$MODEL" --dangerously-skip-permissions --print \
+        --output-format stream-json --verbose --include-partial-messages \
+        < "$PWD/ralph/prompt.md.tmp" 2>&1 | tee "$OUTPUT_FILE" | \
+        jq -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text'
+      EXIT_CODE=${PIPESTATUS[0]}
 
-      # Stream output in real-time
-      tail -f "$OUTPUT_FILE" 2>/dev/null &
-      TAIL_PID=$!
-
-      # Wait for Claude to finish
-      wait $CLAUDE_PID || true
-      EXIT_CODE=$?
-
-      # Stop tailing and give it a moment to finish
-      kill $TAIL_PID 2>/dev/null || true
-      wait $TAIL_PID 2>/dev/null || true
-      sleep 0.5
-
-      # Read final output for completion check
-      OUTPUT=$(cat "$OUTPUT_FILE" 2>/dev/null || echo "")
+      # Extract text from stream-json output for completion check
+      OUTPUT=$(jq -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text' "$OUTPUT_FILE" 2>/dev/null || echo "")
     fi
   fi
   
