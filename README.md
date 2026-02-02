@@ -55,10 +55,15 @@ cp -r skills/debug ~/.config/amp/skills/
 
 For Claude Code
 ```bash
+# Install skills
 cp -r skills/prd ~/.claude/skills/
 cp -r skills/prd-reviewer ~/.claude/skills/
 cp -r skills/ralph ~/.claude/skills/
-cp -r skills/debug ~/.claude/skills/
+mkdir -p ~/.claude/skills/debug && cp skills/debug/SKILL.md ~/.claude/skills/debug/
+
+# Install debug subagents (enables named subagent references)
+mkdir -p ~/.claude/agents
+cp skills/debug/agents/*.md ~/.claude/agents/
 ```
 
 ### Configure Amp auto-handoff (recommended)
@@ -142,20 +147,26 @@ If you encounter bugs or unexpected behavior during development or while Ralph i
 /debug
 ```
 
-The debug skill provides systematic, hypothesis-driven debugging with:
+The debug skill provides systematic, hypothesis-driven debugging through **orchestrated subagents**. Each debugging phase runs in an isolated context to prevent context overflow.
+
+**Architecture:**
+- **Haiku subagents** (fast/cheap): Session management, instrumentation, reproduction, cleanup
+- **Sonnet subagents** (balanced): Web research, fix verification
+- **Opus subagents** (deep reasoning): Hypothesis generation, log analysis, fix application
 
 **Key Features:**
 - **Structured Issue Intake**: Guided collection of reproduction steps, error messages, and environment context
-- **Hypothesis Generation**: Automatically generates testable hypotheses based on symptoms and codebase analysis
-- **Language-Adaptive Instrumentation**: Intelligently adds logging to Python, TypeScript, JavaScript, Java, and Kotlin code using AST analysis
+- **Hypothesis Generation**: Opus analyzes code and generates 3-5 testable hypotheses ranked by confidence
+- **Language-Adaptive Instrumentation**: Haiku adds logging to Python, TypeScript, JavaScript, Java, Go, and other languages
+- **Context-Efficient**: Each phase runs in isolated subagent context, preventing overflow
 - **Automated Workflows**:
   - Issue reproduction and verification
-  - Flaky test handling with statistical analysis
-  - Log pattern detection and analysis
-  - Web research for known issues
-  - Fix application with verification
+  - Flaky test handling (configurable success count)
+  - Log pattern detection and cross-file correlation
+  - Web research for best practices (Sonnet)
+  - Research-informed fix application (Opus)
   - Automated instrumentation cleanup
-- **Session Persistence**: Maintains debugging state across context resets with checkpoint-based restoration
+- **Session Persistence**: State stored in `.claude/debug-sessions/` for resumption
 
 **When to use:**
 - Runtime errors (crashes, exceptions, null references)
@@ -167,13 +178,17 @@ The debug skill provides systematic, hypothesis-driven debugging with:
 **Workflow:**
 1. Invoke `/debug`
 2. Answer structured intake questions (issue type, reproduction steps, expected vs actual behavior)
-3. The skill generates hypotheses and instruments code with logging
-4. Run your application to collect evidence
-5. The skill analyzes logs and refines hypotheses
-6. A fix is proposed, applied, and verified
-7. Instrumentation is automatically cleaned up
+3. Haiku initializes session file as shared state
+4. Opus generates hypotheses based on error patterns
+5. Haiku instruments code with marker-based logging
+6. Haiku runs tests and captures logs
+7. Opus analyzes logs and confirms/rejects hypotheses
+8. Sonnet researches best practices for confirmed issues
+9. Opus applies research-informed fix
+10. Sonnet verifies fix resolves the issue
+11. Haiku cleans up all instrumentation
 
-The debug skill uses marker-based logging (`RALPH_DEBUG_MARKER_START` / `_END`) for complete cleanup after debugging is finished, ensuring no debug code remains in your codebase.
+The debug skill uses marker-based logging (`// DEBUG_HYP_{id}_START` / `_END`) for complete cleanup after debugging is finished, ensuring no debug code remains in your codebase.
 
 ## Reasoning Levels
 
@@ -322,13 +337,17 @@ For systematic debugging of runtime errors, logic bugs, or unexpected behavior i
 /debug
 ```
 
-The debug skill provides:
-- Structured issue intake with guided questions
+The debug skill uses orchestrated subagents for context-efficient debugging:
+- **Opus** for hypothesis generation, log analysis, and fix application
+- **Sonnet** for web research and fix verification
+- **Haiku** for instrumentation, test execution, and cleanup
+
+Key capabilities:
 - Hypothesis-driven investigation with automated instrumentation
-- Language-adaptive logging for Python, TypeScript, JavaScript, Java, and Kotlin
-- Log analysis and pattern detection
-- Fix application with verification
-- Automatic cleanup of debug instrumentation
+- Language-adaptive logging (Python, TypeScript, JavaScript, Java, Go, etc.)
+- Cross-file log correlation and pattern detection
+- Research-informed fix application with verification
+- Session persistence in `.claude/debug-sessions/`
 
 See the [Debug Issues section](#5-debug-issues-when-needed) for detailed usage instructions.
 
