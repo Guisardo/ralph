@@ -17,13 +17,14 @@ This skill orchestrates debugging through focused subagents:
 |-------|----------|-------|---------|
 | Session | debug-session | Haiku | Session file management |
 | Hypothesis | debug-hypothesis | Opus | Code analysis, hypothesis generation |
-| Instrument | debug-instrument | Haiku | Add logging markers |
-| Reproduce | debug-reproduce | Haiku | Run tests, capture logs |
-| Analyze | debug-analyze | Opus | Log analysis, hypothesis confirmation |
+| Instrument | debug-instrument | Haiku | Add logging markers (no commit) |
+| Reproduce | debug-reproduce | Haiku | **Mechanical test execution only** - run commands, capture output (no analysis) |
+| Analyze | debug-analyze | Opus | **Log analysis** - parse logs, confirm/reject hypotheses |
 | Research | debug-research | Sonnet | Web research for solutions |
-| Fix | debug-fix | Opus | Apply research-informed fix |
-| Verify | debug-verify | Sonnet | Verify fix works |
-| Cleanup | debug-cleanup | Haiku | Remove instrumentation |
+| Fix | debug-fix | Opus | Apply research-informed fix (no commit) |
+| Verify | debug-verify | Sonnet | Re-run tests to verify fix works |
+| Cleanup | debug-cleanup | Haiku | Remove instrumentation (no commit) |
+| Commit | (orchestrator) | - | Final commit after verification + cleanup |
 
 ---
 
@@ -185,29 +186,31 @@ prompt: |
 
   Execute reproduction to capture logs.
 
+  Your ONLY job is mechanical execution - run commands and save output.
+  DO NOT analyze, interpret, or determine pass/fail status.
+
   1. Detect test framework:
      - package.json → npm test / jest / vitest
      - pytest.ini → pytest
      - go.mod → go test
 
-  2. Run test capturing output:
+  2. Run test capturing all output:
      {test_command} 2>&1 | tee .claude/debug-sessions/{sessionId}-logs.txt
 
   3. For flaky issues (isFlaky: true):
      Run {successCount} times (default 10)
-     Track pass/fail count
+     Log each run's output with separator markers
 
   4. If no automated test possible:
-     Output manual test script with:
-     - Prerequisites
-     - Step-by-step reproduction
-     - Expected logs to observe
-     - Where to paste captured output
+     Write manual test script to:
+     .claude/debug-sessions/{sessionId}-manual.md
+     Then output: "Manual test script created. Waiting for logs."
 
-  Return:
-  - Log file path
-  - Test result (passed/failed)
-  - Flaky stats if applicable
+  Return ONLY:
+  - Log file path: .claude/debug-sessions/{sessionId}-logs.txt
+  - Exit code: {command exit code}
+
+  Analysis happens in Phase 6 - not your job.
 ```
 
 ---
