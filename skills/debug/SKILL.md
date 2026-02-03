@@ -167,8 +167,7 @@ prompt: |
   4. Preserve exact indentation
   5. Include [filename] label in logs for cross-file correlation
 
-  After all instrumentation:
-  git add . && git commit -m "debug: Add instrumentation for hypotheses"
+  DO NOT commit these changes - instrumentation is temporary.
 
   Return list of files modified.
 ```
@@ -308,14 +307,12 @@ prompt: |
   4. PRESERVE instrumentation markers (needed for verify)
   5. Add test for fixed behavior if appropriate
 
-  Commit:
-  git add . && git commit -m "fix: [{HYP_ID}] {description}"
+  DO NOT commit - fix must be verified and cleaned first.
 
   Return:
   {
     "filesModified": [...],
     "approach": "Which research approach used",
-    "commitSha": "...",
     "testAdded": true|false
   }
 ```
@@ -351,7 +348,7 @@ prompt: |
 ```
 
 **Decision Logic:**
-- SUCCESS → Proceed to Phase 10 (Cleanup)
+- SUCCESS → Proceed to Phase 10 (Cleanup) → Phase 11 (Commit) → Phase 12 (Summary)
 - FAILURE → Rollback fix, increment iteration, check max:
   - If iterations < 5: Return to Phase 3 (new hypotheses)
   - If iterations >= 5: Proceed to Failure Handling
@@ -378,10 +375,7 @@ prompt: |
   4. Run linter if configured
   5. Verify: grep -r "DEBUG_HYP" . (should be empty)
 
-  Commit:
-  git add . && git commit -m "debug: Remove instrumentation"
-
-  Delete session file: rm {sessionFilePath}
+  DO NOT commit - orchestrator will commit after cleanup verification.
 
   Return:
   {
@@ -393,7 +387,38 @@ prompt: |
 
 ---
 
-## Phase 11: Success Summary
+## Phase 11: Final Commit
+
+**Run in main context:**
+
+After cleanup completes successfully, commit the verified, clean fix:
+
+```bash
+# Read session file to get confirmed hypothesis details
+confirmedHyp=$(jq -r '.hypotheses[] | select(.status=="confirmed") | .id' {sessionFilePath})
+hypDesc=$(jq -r '.hypotheses[] | select(.status=="confirmed") | .description' {sessionFilePath})
+
+# Commit the clean fix with descriptive message
+git add .
+git commit -m "fix: Resolve ${confirmedHyp} - ${hypDesc}
+
+Root cause: ${hypDesc}
+Verified through hypothesis-driven debugging.
+All instrumentation removed."
+
+# Clean up session file
+rm {sessionFilePath}
+```
+
+This ensures:
+- Fix has been verified to work (Phase 9)
+- All debug instrumentation removed (Phase 10)
+- Commit contains only the actual fix, not temporary debug code
+- Commit message references the confirmed hypothesis
+
+---
+
+## Phase 12: Success Summary
 
 **Run in main context** - Display to user:
 
@@ -482,7 +507,7 @@ Intake → Session → Hypothesis → Instrument → Reproduce → Analyze
                                                            ↓
                                                     (if confirmed)
                                                            ↓
-                      Research → Fix → Verify ─────────────→ Cleanup
+                      Research → Fix → Verify → Cleanup → Commit → Summary
                          ↑              ↓ (fail)
                          ← ← ← ← ← ← ← ←
 ```
