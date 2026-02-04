@@ -1,11 +1,11 @@
 ---
-name: debug
-description: "Systematic debugging with subagent orchestration. Hypothesis-driven investigation, automated instrumentation, verification. Triggers: /debug, debug this, help debug, fix this bug"
+name: investigate
+description: "Systematic issue investigation with subagent orchestration. Hypothesis-driven diagnosis, automated instrumentation, verification. Triggers: /investigate, investigate this, help investigate, fix this bug, help debug"
 ---
 
-# Debug Skill - Orchestrated
+# Investigate Skill - Orchestrated
 
-Hypothesis-driven debugging through specialized subagents. Each phase runs in isolated context to prevent overflow.
+Hypothesis-driven investigation through specialized subagents. Each phase runs in isolated context to prevent overflow.
 
 ---
 
@@ -55,7 +55,7 @@ Ask user using AskUserQuestion:
 
 **Flaky Detection:** If description contains "intermittent", "flaky", "sometimes", "occasionally", "randomly" → mark `isFlaky: true`.
 
-Display summary and confirm: **Proceed with debug?**
+Display summary and confirm: **Proceed with investigation?**
 
 ---
 
@@ -66,7 +66,7 @@ Display summary and confirm: **Proceed with debug?**
 subagent_type: general-purpose
 model: haiku
 prompt: |
-  Initialize debug session:
+  Initialize investigation session:
   1. Generate sessionId: sess_${timestamp}_${random6}
   2. Run: git rev-parse HEAD → save as initialCommit
   3. Create directory: mkdir -p .claude/debug-sessions
@@ -406,7 +406,7 @@ git add .
 git commit -m "fix: Resolve ${confirmedHyp} - ${hypDesc}
 
 Root cause: ${hypDesc}
-Verified through hypothesis-driven debugging.
+Verified through hypothesis-driven investigation.
 All instrumentation removed."
 
 # Clean up session file
@@ -426,7 +426,7 @@ This ensures:
 **Run in main context** - Display to user:
 
 ```markdown
-# Debug Summary
+# Investigation Summary
 
 ## Root Cause
 {One sentence explanation from confirmed hypothesis}
@@ -469,7 +469,7 @@ When `iterationCount >= maxIterations`:
 3. **Generate failure report** (in main context):
 
 ```markdown
-# Debug Failure Report
+# Investigation Failure Report
 
 ## Issue
 {Original issue description}
@@ -550,9 +550,9 @@ Intake → Session → Hypothesis → Instrument → Reproduce → Analyze
 
 ## Quick Reference
 
-**Start debugging:**
+**Start investigation:**
 ```
-/debug
+/investigate
 ```
 
 **Subagent spawn pattern:**

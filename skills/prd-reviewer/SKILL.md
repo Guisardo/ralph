@@ -15,10 +15,7 @@ Your job: Read PRD like you must implement it tomorrow with no help. Flag anythi
 
 1. Load PRD file (arg or prompt selection from `tasks/prd-*.md`)
 2. Analyze 5 dimensions
-3. Auto-fix non-controversial issues immediately
-4. Generate review → save to `tasks/review-[name]-[timestamp].md`
-5. Prompt approval for manual fixes
-6. Update PRD if approved
+3. Generate review report → save to `tasks/review-[name]-[timestamp].md`
 
 ---
 
@@ -85,25 +82,12 @@ Flag implicit assumptions. What does PRD assume you already know?
 
 ---
 
-## Auto-Fixes (Apply Immediately)
-
-- Add missing `Typecheck passes`, `Tests pass`, `Selenium MCP` criteria
-- Fix story numbering gaps/duplicates
-- Normalize format: `US-7` → `US-007`
-- Fix markdown: newlines, checkbox format `[ ]`
-- Fix case: "typescript" → "TypeScript"
-
----
-
 ## Review Report Format
 
 ```markdown
 # PRD Review Report
 **Generated:** [timestamp]
 **PRD:** [path]
-
-## Auto-Fixes Applied ([n] changes)
-- [list changes]
 
 ## Executive Summary
 **Readiness:** X/10
@@ -116,7 +100,7 @@ Flag implicit assumptions. What does PRD assume you already know?
 - [ ] **[ID]: [Type]** - [Brief issue]
   - **Location:** Line X
   - **Evidence:** [why flagged]
-  - **Fix:** [specific fix]
+  - **Recommended Fix:** [specific fix suggestion]
 
 ### Important (Clarity) - [n] issues
 [same format]
@@ -124,25 +108,9 @@ Flag implicit assumptions. What does PRD assume you already know?
 ### Suggestions - [n] issues
 [same format]
 
-## Proposed Changes
-[Current vs Proposed for each fix]
-
 ## Recommendations
 1. [immediate actions]
 2. [next steps]
-```
-
----
-
-## User Approval Flow
-
-After report:
-```
-Apply manual changes?
-A. Yes - All changes
-B. Critical only (recommended)
-C. No - Keep auto-fixes only
-D. Review first - Show diff
 ```
 
 ---
@@ -169,7 +137,6 @@ D. Review first - Show diff
 
 - File not found → suggest similar files
 - PRD incomplete → list missing sections, suggest `/prd`
-- Write fails → show report in terminal, suggest manual copy
 - Partial failure → complete what possible, note what failed
 
 ---

@@ -8,7 +8,7 @@ Ralph includes specialized skills for the complete development lifecycle:
 - **PRD Generation**: Create detailed product requirements with the `/prd` skill
 - **PRD Review**: Validate PRDs for clarity and completeness with `/prd-reviewer`
 - **Autonomous Execution**: Convert PRDs to executable format with `/ralph`
-- **Systematic Debugging**: Diagnose and fix issues with hypothesis-driven investigation using `/debug`
+- **Systematic Investigation**: Diagnose and fix issues with hypothesis-driven investigation using `/investigate`
 
 Based on [Geoffrey Huntley's Ralph pattern](https://ghuntley.com/ralph/).
 
@@ -50,7 +50,7 @@ For AMP
 cp -r skills/prd ~/.config/amp/skills/
 cp -r skills/prd-reviewer ~/.config/amp/skills/
 cp -r skills/ralph ~/.config/amp/skills/
-cp -r skills/debug ~/.config/amp/skills/
+cp -r skills/investigate ~/.config/amp/skills/
 ```
 
 For Claude Code
@@ -59,11 +59,11 @@ For Claude Code
 cp -r skills/prd ~/.claude/skills/
 cp -r skills/prd-reviewer ~/.claude/skills/
 cp -r skills/ralph ~/.claude/skills/
-mkdir -p ~/.claude/skills/debug && cp skills/debug/SKILL.md ~/.claude/skills/debug/
+mkdir -p ~/.claude/skills/investigate && cp skills/investigate/SKILL.md ~/.claude/skills/investigate/
 
-# Install debug subagents (enables named subagent references)
+# Install investigate subagents (enables named subagent references)
 mkdir -p ~/.claude/agents
-cp skills/debug/agents/*.md ~/.claude/agents/
+cp skills/investigate/agents/*.md ~/.claude/agents/
 ```
 
 ### Configure Amp auto-handoff (recommended)
@@ -139,15 +139,15 @@ Ralph will:
 7. Append learnings to `progress.txt`
 8. Repeat until all stories pass or max iterations reached
 
-### 5. Debug Issues (When Needed)
+### 5. Investigate Issues (When Needed)
 
-If you encounter bugs or unexpected behavior during development or while Ralph is running, use the debug skill:
+If you encounter bugs or unexpected behavior during development or while Ralph is running, use the investigate skill:
 
 ```
-/debug
+/investigate
 ```
 
-The debug skill provides systematic, hypothesis-driven debugging through **orchestrated subagents**. Each debugging phase runs in an isolated context to prevent context overflow.
+The investigate skill provides systematic, hypothesis-driven investigation through **orchestrated subagents**. Each investigation phase runs in an isolated context to prevent context overflow.
 
 **Architecture:**
 - **Haiku subagents** (fast/cheap): Session management, instrumentation, reproduction, cleanup
@@ -176,7 +176,7 @@ The debug skill provides systematic, hypothesis-driven debugging through **orche
 - Cross-service integration problems
 
 **Workflow:**
-1. Invoke `/debug`
+1. Invoke `/investigate`
 2. Answer structured intake questions (issue type, reproduction steps, expected vs actual behavior)
 3. Haiku initializes session file as shared state
 4. Opus generates hypotheses based on error patterns
@@ -188,7 +188,7 @@ The debug skill provides systematic, hypothesis-driven debugging through **orche
 10. Sonnet verifies fix resolves the issue
 11. Haiku cleans up all instrumentation
 
-The debug skill uses marker-based logging (`// DEBUG_HYP_{id}_START` / `_END`) for complete cleanup after debugging is finished, ensuring no debug code remains in your codebase.
+The investigate skill uses marker-based logging (`// DEBUG_HYP_{id}_START` / `_END`) for complete cleanup after investigation is finished, ensuring no debug code remains in your codebase.
 
 ## Reasoning Levels
 
@@ -237,7 +237,7 @@ When using the `/ralph` skill to convert a PRD to prd.json, it will guide you in
 | `skills/prd/` | Skill for generating PRDs |
 | `skills/prd-reviewer/` | Skill for reviewing PRDs (validates clarity, sizing, and Ralph readiness) |
 | `skills/ralph/` | Skill for converting PRDs to JSON |
-| `skills/debug/` | Skill for systematic debugging with hypothesis-driven investigation and automated instrumentation |
+| `skills/investigate/` | Skill for systematic investigation with hypothesis-driven diagnosis and automated instrumentation |
 | `skills/sync-jira/` | Skill for pushing PRDs to Jira (creates epic and story tickets) |
 | `skills/cancel-jira/` | Skill for cancelling all Jira tickets when abandoning a PRD |
 | `flowchart/` | Interactive visualization of how Ralph works |
@@ -329,15 +329,15 @@ cat progress.txt
 git log --oneline -10
 ```
 
-### Debugging Code Issues
+### Investigating Code Issues
 
-For systematic debugging of runtime errors, logic bugs, or unexpected behavior in your codebase, use the **debug skill**:
+For systematic investigation of runtime errors, logic bugs, or unexpected behavior in your codebase, use the **investigate skill**:
 
 ```
-/debug
+/investigate
 ```
 
-The debug skill uses orchestrated subagents for context-efficient debugging:
+The investigate skill uses orchestrated subagents for context-efficient investigation:
 - **Opus** for hypothesis generation, log analysis, and fix application
 - **Sonnet** for web research and fix verification
 - **Haiku** for instrumentation, test execution, and cleanup
@@ -349,7 +349,7 @@ Key capabilities:
 - Research-informed fix application with verification
 - Session persistence in `.claude/debug-sessions/`
 
-See the [Debug Issues section](#5-debug-issues-when-needed) for detailed usage instructions.
+See the [Investigate Issues section](#5-investigate-issues-when-needed) for detailed usage instructions.
 
 ## Customizing the Prompt
 
