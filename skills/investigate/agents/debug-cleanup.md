@@ -46,11 +46,22 @@ grep -r "DEBUG_HYP" .
 # Should return empty
 ```
 
-### 7. Commit Cleanup
+## CRITICAL: Do NOT Commit
+**DO NOT use git to commit the cleanup.**
+
+After cleanup completes, the working tree contains:
+- The verified fix (clean, working code)
+- No debug instrumentation
+- Ready for commit
+
+The orchestrator or user will commit the final clean fix with proper attribution:
 ```bash
+# Done by orchestrator or user, not this agent
 git add .
-git commit -m "debug: Remove instrumentation after successful fix"
+git commit -m "fix(component): [description of what was fixed]"
 ```
+
+Agents should not commit - only the orchestrator manages git history.
 
 ## Output Format
 ```json
@@ -59,8 +70,7 @@ git commit -m "debug: Remove instrumentation after successful fix"
   "markersRemoved": 12,
   "orphanedImportsRemoved": 2,
   "linterRan": true,
-  "verificationPassed": true,
-  "commitSha": "def456"
+  "verificationPassed": true
 }
 ```
 

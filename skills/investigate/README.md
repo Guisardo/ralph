@@ -1,8 +1,8 @@
-# Debug Skill - Subagent Architecture
+# Investigate Skill - Subagent Architecture
 
 ## Overview
 
-This skill implements hypothesis-driven debugging through orchestrated subagents. Each debugging phase runs in an isolated context to prevent context overflow.
+This skill implements hypothesis-driven investigation through orchestrated subagents. Each investigation phase runs in an isolated context to prevent context overflow.
 
 ## Architecture
 
@@ -78,7 +78,7 @@ Each phase runs in isolated subagent context:
 ## File Structure
 
 ```
-skills/debug/
+skills/investigate/
 ├── SKILL.md           # Main orchestrator (552 lines)
 ├── README.md          # This file
 └── agents/            # Subagent definitions
@@ -96,8 +96,8 @@ skills/debug/
 ## Usage
 
 ```bash
-# Start debugging
-/debug
+# Start investigation
+/investigate
 
 # Skill will:
 # 1. Ask intake questions (main context)
@@ -124,19 +124,19 @@ The agent definition files in `agents/` directory serve two purposes:
 
 ### Installation (Required)
 
-The debug skill requires its subagent definitions to be installed:
+The investigate skill requires its subagent definitions to be installed:
 
 ```bash
 # Install to user agents (available in all projects)
 mkdir -p ~/.claude/agents
-cp skills/debug/agents/*.md ~/.claude/agents/
+cp skills/investigate/agents/*.md ~/.claude/agents/
 ```
 
 Or for project-level installation:
 ```bash
 # Install to project agents (available in this project only)
 mkdir -p .claude/agents
-cp skills/debug/agents/*.md .claude/agents/
+cp skills/investigate/agents/*.md .claude/agents/
 ```
 
 The SKILL.md orchestrates these subagents using the Task tool with focused prompts for each phase.
@@ -161,7 +161,7 @@ All requirements from `tasks/prd-claude-code-debug-skill.md` are preserved:
 - ✅ US-014: Flaky test handling
 - ✅ US-015: Rollback on max iterations
 
-## Debugging the Debugger
+## Investigating the Investigator
 
 If issues occur with the skill itself:
 

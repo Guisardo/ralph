@@ -1,11 +1,11 @@
 ---
-name: debug
-description: "Systematic debugging with subagent orchestration. Hypothesis-driven investigation, automated instrumentation, verification. Triggers: /debug, debug this, help debug, fix this bug"
+name: investigate
+description: "Systematic issue investigation with subagent orchestration. Hypothesis-driven diagnosis, automated instrumentation, verification. Triggers: /investigate, investigate this, help investigate, fix this bug, help debug"
 ---
 
-# Debug Skill - Orchestrated
+# Investigate Skill - Orchestrated
 
-Hypothesis-driven debugging through specialized subagents. Each phase runs in isolated context to prevent overflow.
+Hypothesis-driven investigation through specialized subagents. Each phase runs in isolated context to prevent overflow.
 
 ---
 
@@ -17,13 +17,14 @@ This skill orchestrates debugging through focused subagents:
 |-------|----------|-------|---------|
 | Session | debug-session | Haiku | Session file management |
 | Hypothesis | debug-hypothesis | Opus | Code analysis, hypothesis generation |
-| Instrument | debug-instrument | Haiku | Add logging markers |
-| Reproduce | debug-reproduce | Haiku | Run tests, capture logs |
-| Analyze | debug-analyze | Opus | Log analysis, hypothesis confirmation |
+| Instrument | debug-instrument | Haiku | Add logging markers (no commit) |
+| Reproduce | debug-reproduce | Haiku | **Mechanical test execution only** - run commands, capture output (no analysis) |
+| Analyze | debug-analyze | Opus | **Log analysis** - parse logs, confirm/reject hypotheses |
 | Research | debug-research | Sonnet | Web research for solutions |
-| Fix | debug-fix | Opus | Apply research-informed fix |
-| Verify | debug-verify | Sonnet | Verify fix works |
-| Cleanup | debug-cleanup | Haiku | Remove instrumentation |
+| Fix | debug-fix | Opus | Apply research-informed fix (no commit) |
+| Verify | debug-verify | Sonnet | Re-run tests to verify fix works |
+| Cleanup | debug-cleanup | Haiku | Remove instrumentation (no commit) |
+| Commit | (orchestrator) | - | Final commit after verification + cleanup |
 
 ---
 
@@ -54,7 +55,7 @@ Ask user using AskUserQuestion:
 
 **Flaky Detection:** If description contains "intermittent", "flaky", "sometimes", "occasionally", "randomly" → mark `isFlaky: true`.
 
-Display summary and confirm: **Proceed with debug?**
+Display summary and confirm: **Proceed with investigation?**
 
 ---
 
@@ -65,7 +66,7 @@ Display summary and confirm: **Proceed with debug?**
 subagent_type: general-purpose
 model: haiku
 prompt: |
-  Initialize debug session:
+  Initialize investigation session:
   1. Generate sessionId: sess_${timestamp}_${random6}
   2. Run: git rev-parse HEAD → save as initialCommit
   3. Create directory: mkdir -p .claude/debug-sessions
@@ -167,8 +168,7 @@ prompt: |
   4. Preserve exact indentation
   5. Include [filename] label in logs for cross-file correlation
 
-  After all instrumentation:
-  git add . && git commit -m "debug: Add instrumentation for hypotheses"
+  DO NOT commit these changes - instrumentation is temporary.
 
   Return list of files modified.
 ```
@@ -186,29 +186,31 @@ prompt: |
 
   Execute reproduction to capture logs.
 
+  Your ONLY job is mechanical execution - run commands and save output.
+  DO NOT analyze, interpret, or determine pass/fail status.
+
   1. Detect test framework:
      - package.json → npm test / jest / vitest
      - pytest.ini → pytest
      - go.mod → go test
 
-  2. Run test capturing output:
+  2. Run test capturing all output:
      {test_command} 2>&1 | tee .claude/debug-sessions/{sessionId}-logs.txt
 
   3. For flaky issues (isFlaky: true):
      Run {successCount} times (default 10)
-     Track pass/fail count
+     Log each run's output with separator markers
 
   4. If no automated test possible:
-     Output manual test script with:
-     - Prerequisites
-     - Step-by-step reproduction
-     - Expected logs to observe
-     - Where to paste captured output
+     Write manual test script to:
+     .claude/debug-sessions/{sessionId}-manual.md
+     Then output: "Manual test script created. Waiting for logs."
 
-  Return:
-  - Log file path
-  - Test result (passed/failed)
-  - Flaky stats if applicable
+  Return ONLY:
+  - Log file path: .claude/debug-sessions/{sessionId}-logs.txt
+  - Exit code: {command exit code}
+
+  Analysis happens in Phase 6 - not your job.
 ```
 
 ---
@@ -308,14 +310,12 @@ prompt: |
   4. PRESERVE instrumentation markers (needed for verify)
   5. Add test for fixed behavior if appropriate
 
-  Commit:
-  git add . && git commit -m "fix: [{HYP_ID}] {description}"
+  DO NOT commit - fix must be verified and cleaned first.
 
   Return:
   {
     "filesModified": [...],
     "approach": "Which research approach used",
-    "commitSha": "...",
     "testAdded": true|false
   }
 ```
@@ -351,7 +351,7 @@ prompt: |
 ```
 
 **Decision Logic:**
-- SUCCESS → Proceed to Phase 10 (Cleanup)
+- SUCCESS → Proceed to Phase 10 (Cleanup) → Phase 11 (Commit) → Phase 12 (Summary)
 - FAILURE → Rollback fix, increment iteration, check max:
   - If iterations < 5: Return to Phase 3 (new hypotheses)
   - If iterations >= 5: Proceed to Failure Handling
@@ -378,10 +378,7 @@ prompt: |
   4. Run linter if configured
   5. Verify: grep -r "DEBUG_HYP" . (should be empty)
 
-  Commit:
-  git add . && git commit -m "debug: Remove instrumentation"
-
-  Delete session file: rm {sessionFilePath}
+  DO NOT commit - orchestrator will commit after cleanup verification.
 
   Return:
   {
@@ -393,12 +390,43 @@ prompt: |
 
 ---
 
-## Phase 11: Success Summary
+## Phase 11: Final Commit
+
+**Run in main context:**
+
+After cleanup completes successfully, commit the verified, clean fix:
+
+```bash
+# Read session file to get confirmed hypothesis details
+confirmedHyp=$(jq -r '.hypotheses[] | select(.status=="confirmed") | .id' {sessionFilePath})
+hypDesc=$(jq -r '.hypotheses[] | select(.status=="confirmed") | .description' {sessionFilePath})
+
+# Commit the clean fix with descriptive message
+git add .
+git commit -m "fix: Resolve ${confirmedHyp} - ${hypDesc}
+
+Root cause: ${hypDesc}
+Verified through hypothesis-driven investigation.
+All instrumentation removed."
+
+# Clean up session file
+rm {sessionFilePath}
+```
+
+This ensures:
+- Fix has been verified to work (Phase 9)
+- All debug instrumentation removed (Phase 10)
+- Commit contains only the actual fix, not temporary debug code
+- Commit message references the confirmed hypothesis
+
+---
+
+## Phase 12: Success Summary
 
 **Run in main context** - Display to user:
 
 ```markdown
-# Debug Summary
+# Investigation Summary
 
 ## Root Cause
 {One sentence explanation from confirmed hypothesis}
@@ -441,7 +469,7 @@ When `iterationCount >= maxIterations`:
 3. **Generate failure report** (in main context):
 
 ```markdown
-# Debug Failure Report
+# Investigation Failure Report
 
 ## Issue
 {Original issue description}
@@ -482,7 +510,7 @@ Intake → Session → Hypothesis → Instrument → Reproduce → Analyze
                                                            ↓
                                                     (if confirmed)
                                                            ↓
-                      Research → Fix → Verify ─────────────→ Cleanup
+                      Research → Fix → Verify → Cleanup → Commit → Summary
                          ↑              ↓ (fail)
                          ← ← ← ← ← ← ← ←
 ```
@@ -522,9 +550,9 @@ Intake → Session → Hypothesis → Instrument → Reproduce → Analyze
 
 ## Quick Reference
 
-**Start debugging:**
+**Start investigation:**
 ```
-/debug
+/investigate
 ```
 
 **Subagent spawn pattern:**

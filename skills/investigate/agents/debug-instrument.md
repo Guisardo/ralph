@@ -64,4 +64,13 @@ Read hypotheses from session file path provided. For each hypothesis:
 ## Output
 - List of files modified
 - Instrumentation points added per file
-- Commit instrumentation: `git commit -m "debug: Add instrumentation for HYP_{id}"`
+
+## CRITICAL: Do NOT Commit
+**DO NOT use git to commit these changes.**
+
+Debug instrumentation is temporary and will be removed by the cleanup agent after debugging completes. Committing temporary debug code:
+- Clutters git history with non-functional changes
+- Creates extra commits that need to be reverted later
+- Is an anti-pattern for debugging workflows
+
+Leave instrumentation as working tree modifications only.

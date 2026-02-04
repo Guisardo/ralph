@@ -38,11 +38,22 @@ describe('Fix for HYP_1', () => {
 });
 ```
 
-### 4. Commit Fix
-```bash
-git add [modified files]
-git commit -m "fix: [HYP_ID] [description of root cause fix]"
-```
+## CRITICAL: Do NOT Commit
+**DO NOT use git to commit the fix.**
+
+The fix must go through verification first:
+1. Fix is applied (this agent's job)
+2. Debug instrumentation remains in place for verification
+3. Verification agent runs tests to confirm fix works
+4. Cleanup agent removes all debug instrumentation
+5. ONLY THEN is the fix committed (by orchestrator or user)
+
+Committing the fix now would:
+- Include debug instrumentation markers in the commit
+- Skip verification that the fix actually works
+- Create incomplete or incorrect commits
+
+Leave the fix as working tree modifications only.
 
 ## Output Format
 ```json
@@ -51,7 +62,6 @@ git commit -m "fix: [HYP_ID] [description of root cause fix]"
   "fixDescription": "What was fixed and why",
   "filesModified": ["file1.ts", "file2.ts"],
   "approach": "Which research-backed approach was used",
-  "commitSha": "abc123",
   "testAdded": true|false,
   "testFile": "path/to/test.ts"
 }
